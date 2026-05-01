@@ -1,18 +1,158 @@
-"""Hook runner protocol. 0.0.1 placeholder.
+"""Hook framework primitives — Step C (0.2.0).
 
-Hook script paths are configurable by the consumer; ``core-harness`` does not
-hard-code script locations. Default path conventions are TBD and will be
-introduced in a later minor.
+Layer 1 framework slice for PreToolUse hook wiring. Owns:
+
+- The exit-code / stdin / stderr contract used by hook scripts.
+- A small Python helper (``HookRunner`` and module-level functions) so
+  Python-implemented hooks don't have to hand-roll ``json.load(sys.stdin)``
+  + ``sys.exit`` boilerplate.
+- A path-configurable bash companion library shipped under ``hooks/lib/``
+  and exposed via :func:`lib_path`. Consumers ``source`` it from their
+  org-specific hook scripts.
+
+The framework deliberately knows **nothing** about consumer-specific
+concepts: no role names, no path patterns, no Japanese-only string
+constants. The default block-message prefix matches the legacy
+contract for backward compatibility with the original consumer's hook
+tests, but it is overridable via the ``CORE_HARNESS_BLOCK_PREFIX``
+environment variable or ``HookRunner(block_prefix=...)`` argument so
+non-Japanese consumers can localise without forking.
+
+See ``docs/hook-contract.md`` for the full specification.
 """
 
-from typing import Any, Protocol, runtime_checkable
+from __future__ import annotations
+
+import json
+import os
+import sys
+from pathlib import Path
+from typing import Any, IO, Mapping, Optional
+
+DEFAULT_BLOCK_PREFIX = "ブロック: "
+"""Legacy block-message prefix preserved for the original consumer.
+
+Overridable per-process via ``CORE_HARNESS_BLOCK_PREFIX`` or per-runner
+via ``HookRunner(block_prefix=...)``.
+"""
+
+BLOCK_EXIT_CODE = 2
+ALLOW_EXIT_CODE = 0
 
 
-@runtime_checkable
-class HookRunner(Protocol):
-    """Protocol for executing harness hooks. Concrete shape TBD in 0.1+."""
+def _resolve_prefix(explicit: Optional[str]) -> str:
+    if explicit is not None:
+        return explicit
+    env = os.environ.get("CORE_HARNESS_BLOCK_PREFIX")
+    if env is not None:
+        return env
+    return DEFAULT_BLOCK_PREFIX
 
-    def run(self, *args: Any, **kwargs: Any) -> Any: ...
+
+def lib_path() -> Path:
+    """Return the on-disk directory containing the bash companion lib.
+
+    Bash hooks source the lib via::
+
+        source "$(python -c 'import core_harness.hooks; print(core_harness.hooks.lib_path())')/core_harness_hooks.sh"
+
+    The directory contains org-neutral helpers only; consumer-specific
+    matching logic lives in the consumer repo.
+    """
+    return Path(__file__).resolve().parent / "lib"
 
 
-__all__ = ["HookRunner"]
+class HookRunner:
+    """Helper for Python-implemented PreToolUse hooks.
+
+    The framework contract is intentionally minimal — three operations:
+
+    - :meth:`parse_pretooluse_stdin` reads and JSON-decodes the hook
+      payload Claude Code delivers on stdin.
+    - :meth:`exit_with_block` writes ``{prefix}{message}`` to stderr and
+      exits ``2``. The prefix defaults to the legacy
+      ``"ブロック: "`` string for compatibility, but is overridable.
+    - :meth:`exit_ok` exits ``0``.
+
+    Instances are cheap; create one per hook invocation.
+    """
+
+    def __init__(
+        self,
+        *,
+        block_prefix: Optional[str] = None,
+        stderr: Optional[IO[str]] = None,
+        stdin: Optional[IO[str]] = None,
+    ) -> None:
+        self.block_prefix = _resolve_prefix(block_prefix)
+        self._stderr = stderr if stderr is not None else sys.stderr
+        self._stdin = stdin if stdin is not None else sys.stdin
+
+    def parse_pretooluse_stdin(self) -> Mapping[str, Any]:
+        """Read the PreToolUse JSON payload from stdin.
+
+        Empty stdin is treated as an empty payload (``{}``), matching
+        the de-facto contract where hooks receive ``{}`` for tools they
+        don't care about and exit 0. Malformed JSON triggers
+        :meth:`exit_with_block` so the framework fails closed rather
+        than silently allowing through a tool call whose payload it
+        couldn't inspect.
+        """
+        raw = self._stdin.read()
+        if not raw or not raw.strip():
+            return {}
+        try:
+            payload = json.loads(raw)
+        except (ValueError, TypeError) as exc:
+            self.exit_with_block(
+                f"PreToolUse JSON のパースに失敗しました: {exc}"
+            )
+        if not isinstance(payload, dict):
+            self.exit_with_block(
+                "PreToolUse payload が JSON object ではありません"
+            )
+        return payload
+
+    def exit_with_block(self, message: str) -> "Any":
+        """Write the deny reason to stderr and exit with code 2.
+
+        Never returns. The annotation is ``Any`` so callers can write
+        ``return runner.exit_with_block(...)`` if they prefer.
+        """
+        self._stderr.write(f"{self.block_prefix}{message}\n")
+        try:
+            self._stderr.flush()
+        except Exception:
+            pass
+        sys.exit(BLOCK_EXIT_CODE)
+
+    def exit_ok(self) -> "Any":
+        """Exit with code 0 (allow). Never returns."""
+        sys.exit(ALLOW_EXIT_CODE)
+
+
+def parse_pretooluse_stdin() -> Mapping[str, Any]:
+    """Module-level convenience: ``HookRunner().parse_pretooluse_stdin()``."""
+    return HookRunner().parse_pretooluse_stdin()
+
+
+def exit_with_block(message: str) -> "Any":
+    """Module-level convenience: ``HookRunner().exit_with_block(message)``."""
+    HookRunner().exit_with_block(message)
+
+
+def exit_ok() -> "Any":
+    """Module-level convenience: ``HookRunner().exit_ok()``."""
+    HookRunner().exit_ok()
+
+
+__all__ = [
+    "ALLOW_EXIT_CODE",
+    "BLOCK_EXIT_CODE",
+    "DEFAULT_BLOCK_PREFIX",
+    "HookRunner",
+    "exit_ok",
+    "exit_with_block",
+    "lib_path",
+    "parse_pretooluse_stdin",
+]

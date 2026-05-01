@@ -8,6 +8,58 @@ and this project adheres to pre-1.0 semantic versioning as defined in
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-02
+
+### Added
+
+- `core_harness.hooks` (Step C — hook framework, refs ja#128 / design
+  PR #196 §4 Step C):
+  - `HookRunner` class (`parse_pretooluse_stdin`, `exit_with_block`,
+    `exit_ok`) — Python helper for the PreToolUse hook contract.
+  - Module-level convenience wrappers `parse_pretooluse_stdin()`,
+    `exit_with_block(message)`, `exit_ok()`.
+  - Constants `DEFAULT_BLOCK_PREFIX` (`"ブロック: "`, retained for
+    legacy consumer-test compatibility), `BLOCK_EXIT_CODE` (= 2),
+    `ALLOW_EXIT_CODE` (= 0).
+  - `lib_path()` returning the on-disk directory of the bash companion
+    library (path-configurable; consumers source it from there).
+  - `CORE_HARNESS_BLOCK_PREFIX` env var + `block_prefix=` constructor
+    argument so non-Japanese consumers can override the deny-line
+    prefix without forking.
+- `core_harness/hooks/lib/core_harness_hooks.sh` — bash companion
+  library with `block_with_message`, `require_dependency`,
+  `read_pretooluse_{command,file_path,tool_name}`, and the generic
+  command-string parsers (`split_segments`, `flatten_substitutions`,
+  `collect_assignments`, `expand_known_vars`, `unwrap_eval_and_bashc`)
+  formerly duplicated in the original consumer's
+  `.hooks/lib/segment-split.sh`.
+- `docs/hook-contract.md` — contract specification (stdin JSON shape,
+  exit code semantics, stderr block-prefix format, helper APIs).
+- `tests/test_hooks.py`, `tests/test_hooks_bash.sh` — generic-only
+  framework tests (no consumer-org strings).
+
+### Changed
+
+- `core_harness.hooks` graduated from placeholder to experimental.
+- `pyproject.toml`: `core_harness.hooks` now ships `lib/*.sh` as
+  package data so `lib_path()` resolves through `pip install` and
+  `git+https://...@vX` installs alike.
+
+### Notes
+
+- The default block-message prefix `"ブロック: "` exists solely for
+  back-compat with the original consumer's hook test suite during the
+  0.x transition. New consumers SHOULD set
+  `CORE_HARNESS_BLOCK_PREFIX`. The default may be retired no earlier
+  than 1.0 with a deprecation window; see `docs/hook-contract.md` §5.
+- Hook *script bodies* (block-no-verify, block-dangerous-git, etc.)
+  remain in the consumer repo for this release; only the wiring
+  framework / contract / generic parser library moves up. Movement of
+  generic hook scripts may follow in a later 0.x once the contract has
+  bedded in.
+- `core_harness.audit` remains a placeholder; Step D in a subsequent
+  0.x release.
+
 ## [0.1.0] - 2026-05-02
 
 ### Added

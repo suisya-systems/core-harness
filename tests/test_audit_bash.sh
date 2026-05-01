@@ -103,6 +103,46 @@ t_missing_equals_rejected() {
 }
 check "journal_append rejects field without =" t_missing_equals_rejected
 
+t_unsafe_key_rejected() {
+    local path="$TMPDIR_AUDIT/unsafe.jsonl"
+    if journal_append "$path" "e" "weird-key=v" 2>/dev/null; then
+        return 1
+    fi
+    [ ! -s "$path" ]
+}
+check "journal_append rejects keys outside [A-Za-z_][A-Za-z0-9_]*" t_unsafe_key_rejected
+
+t_raw_rejects_non_object() {
+    local path="$TMPDIR_AUDIT/raw_bad.jsonl"
+    if echo '[1,2,3]' | journal_append_raw "$path" 2>/dev/null; then
+        return 1
+    fi
+    [ ! -s "$path" ]
+}
+check "journal_append_raw rejects non-object input" t_raw_rejects_non_object
+
+t_raw_rejects_empty() {
+    local path="$TMPDIR_AUDIT/raw_empty.jsonl"
+    if printf '' | journal_append_raw "$path" 2>/dev/null; then
+        return 1
+    fi
+}
+check "journal_append_raw rejects empty input" t_raw_rejects_empty
+
+t_raw_normalizes_framing() {
+    local path="$TMPDIR_AUDIT/raw_norm.jsonl"
+    # No trailing newline on input; should still produce exactly one
+    # line in the file.
+    printf '{"ts":"2026-05-02T00:00:00Z","event":"raw","x":1}' \
+        | journal_append_raw "$path"
+    printf '{"ts":"2026-05-02T00:00:01Z","event":"raw","x":2}' \
+        | journal_append_raw "$path"
+    local n
+    n="$(wc -l < "$path")"
+    [ "$n" -eq 2 ]
+}
+check "journal_append_raw normalizes single-line framing" t_raw_normalizes_framing
+
 # ----- missing args ----------------------------------------------------
 
 t_missing_args_rejected() {

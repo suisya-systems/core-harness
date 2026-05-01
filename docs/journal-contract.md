@@ -45,6 +45,14 @@ type system; consumers needing typed payload values from bash should
 either pre-encode JSON and use `journal_append_raw`, or call the
 Python API.
 
+The bash helper additionally restricts payload **keys** to the
+identifier-safe character class `[A-Za-z_][A-Za-z0-9_]*`. This is a
+bash-only constraint — keys are interpolated literally into a `jq`
+program and bound as `--arg` names, neither of which can be quoted at
+runtime. Consumers needing arbitrary key shapes should use the Python
+API (no such restriction) or `journal_append_raw` (which validates the
+input parses as a JSON object and re-encodes compactly).
+
 ### 1.3 Example line
 
 ```json

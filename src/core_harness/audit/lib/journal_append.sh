@@ -103,12 +103,20 @@ journal_append() {
             printf 'core_harness.audit: empty field key in %q\n' "$pair" >&2
             return 2
         fi
+        # Restrict keys to an identifier-safe character set: keys are
+        # interpolated into the jq program as a literal object key and
+        # as a bound argument name, neither of which can be quoted at
+        # runtime. The Python API has no such restriction.
         case "$key" in
             ts|event)
                 printf 'core_harness.audit: reserved key %q cannot appear in fields\n' "$key" >&2
                 return 2
                 ;;
         esac
+        if ! [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+            printf 'core_harness.audit: field key %q must match [A-Za-z_][A-Za-z0-9_]* (use Python API or journal_append_raw for arbitrary keys)\n' "$key" >&2
+            return 2
+        fi
         jq_args+=(--arg "$key" "$val")
         filter="$filter + {\"$key\": \$$key}"
     done
@@ -123,12 +131,34 @@ journal_append() {
 }
 
 # journal_append_raw <path>
-# Reads one JSON object (single line) from stdin and appends it verbatim.
+# Reads a single pre-encoded JSON object from stdin and appends it as
+# one JSONL line. Validates that the input parses as a JSON object and
+# emits exactly one trailing newline regardless of the input's framing.
 journal_append_raw() {
     if [ "$#" -lt 1 ]; then
         printf 'usage: journal_append_raw <path>\n' >&2
         return 2
     fi
+    _journal_require_jq || return $?
     local path="$1"
-    _journal_write_locked "$path"
+    local input
+    input="$(cat)"
+    # Reject empty input.
+    if [ -z "${input//[[:space:]]/}" ]; then
+        printf 'core_harness.audit: journal_append_raw requires non-empty stdin\n' >&2
+        return 2
+    fi
+    # Reject inputs that aren't a single JSON object.
+    if ! printf '%s' "$input" | jq -e 'type == "object"' >/dev/null 2>&1; then
+        printf 'core_harness.audit: journal_append_raw input must be a single JSON object\n' >&2
+        return 2
+    fi
+    # Re-encode compactly to guarantee a single line, no embedded
+    # newlines, and a single trailing newline written by printf.
+    local line
+    if ! line="$(printf '%s' "$input" | jq -c '.')"; then
+        printf 'core_harness.audit: jq compact-encode failed\n' >&2
+        return 1
+    fi
+    printf '%s\n' "$line" | _journal_write_locked "$path"
 }

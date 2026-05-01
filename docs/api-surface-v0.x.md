@@ -1,21 +1,21 @@
 # Public API Surface — 0.x
 
-> **Status: 0.1.0 published.** This document tracks the evolving public
+> **Status: 0.2.0 published.** This document tracks the evolving public
 > surface during the pre-1.0 phase. Items below are *experimental*
 > unless explicitly marked `stable`; signatures may change between
 > minor versions per [`semver-policy.md`](semver-policy.md).
 
 ## Modules
 
-| Module | Status (0.1) | Notes |
+| Module | Status (0.2) | Notes |
 |---|---|---|
 | `core_harness.schema` | experimental | Framework JSON Schema + merge helper. Type-only — concrete role names / consumer regexes live in the org-extension schema (PR #196 §3). |
 | `core_harness.validator` | experimental | Audit engine for per-role `settings.local.json`. |
 | `core_harness.generator` | experimental | Worker `settings.local.json` template renderer. |
-| `core_harness.hooks` | placeholder | Hook framework lib (Step C). |
+| `core_harness.hooks` | experimental | PreToolUse hook contract (Step C, 0.2). Python helper + bash companion lib + `docs/hook-contract.md`. |
 | `core_harness.audit` | placeholder | Journal API (Step D). |
 
-## Public symbols (0.1)
+## Public symbols (0.2)
 
 ### `core_harness.schema`
 
@@ -53,6 +53,39 @@
 - Arbitrary names supplied via `extra_placeholders={...}` for legacy
   alias support (e.g. consumers may pass `{claude_org_path}` pointing
   at the same value as `consumer_root`).
+
+### `core_harness.hooks`
+
+| Symbol | Status | Purpose |
+|---|---|---|
+| `HookRunner(*, block_prefix=None, stderr=None, stdin=None)` | experimental | Helper for Python-implemented PreToolUse hooks. |
+| `HookRunner.parse_pretooluse_stdin() -> Mapping[str, Any]` | experimental | Read + JSON-decode hook payload from stdin. Empty stdin → `{}`; malformed JSON → block. |
+| `HookRunner.exit_with_block(message: str)` | experimental | Write `{prefix}{message}` to stderr, exit 2. |
+| `HookRunner.exit_ok()` | experimental | Exit 0. |
+| `parse_pretooluse_stdin()` | experimental | Module-level convenience for `HookRunner().parse_pretooluse_stdin()`. |
+| `exit_with_block(message)` | experimental | Module-level convenience for `HookRunner().exit_with_block(message)`. |
+| `exit_ok()` | experimental | Module-level convenience for `HookRunner().exit_ok()`. |
+| `lib_path() -> Path` | experimental | On-disk directory of the bash companion library (`core_harness_hooks.sh`). |
+| `DEFAULT_BLOCK_PREFIX` | experimental | Default deny-line prefix (`"Blocked: "`, neutral English; consumers override). |
+| `BLOCK_EXIT_CODE` | experimental | `2` — deny exit code. |
+| `ALLOW_EXIT_CODE` | experimental | `0` — allow exit code. |
+
+#### Bash companion (`core_harness_hooks.sh`)
+
+Sourced via the path returned by `lib_path()`. Public functions:
+`block_with_message`, `require_dependency`, `read_pretooluse_command`,
+`read_pretooluse_file_path`, `read_pretooluse_tool_name`,
+`split_segments`, `flatten_substitutions`, `collect_assignments`,
+`expand_known_vars`, `unwrap_eval_and_bashc`. See
+[`hook-contract.md`](hook-contract.md) for full spec.
+
+#### Environment variables
+
+- `CORE_HARNESS_BLOCK_PREFIX` — overrides the default `"Blocked: "`
+  prefix in both the Python helper and the bash companion. Consumers
+  with a locale-specific contract (e.g. claude-org-ja's
+  `"ブロック: "`) export this at their org boundary so Layer 1 stays
+  unaware of consumer locale.
 
 ## 1.0 graduation conditions
 

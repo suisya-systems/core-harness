@@ -409,5 +409,74 @@ class FailClosedTests(unittest.TestCase):
         self.assertFalse(matches_worker_template(leaky_config, template))
 
 
+class ValidationResultBoolTests(unittest.TestCase):
+    """0.3.1: bool(ValidationResult) is rejected to prevent ``if result``
+    being misread as ``if result.ok``. See cross-review M5."""
+
+    def test_bool_raises_typeerror(self):
+        result = ValidationResult(findings=[])
+        with self.assertRaises(TypeError):
+            bool(result)
+
+    def test_bool_raises_even_with_errors(self):
+        result = ValidationResult(findings=[Finding("s", "r", "ERROR", "x")])
+        with self.assertRaises(TypeError):
+            bool(result)
+
+    def test_ok_property_still_works(self):
+        self.assertTrue(ValidationResult(findings=[]).ok)
+        self.assertFalse(
+            ValidationResult(findings=[Finding("s", "r", "ERROR", "x")]).ok
+        )
+
+
+class CheckWorkerSettingsWorktreesTests(unittest.TestCase):
+    """0.3.1: include_worktrees descends into ``.worktrees/<branch>/``."""
+
+    TEMPLATE = {
+        "permissions": {"allow": ["Bash(sleep:*)"], "deny": []},
+        "env": {"WORKER_DIR": "{worker_dir}"},
+    }
+
+    def _make_settings(self, dir_path: Path, worker_dir_value: str) -> None:
+        claude_dir = dir_path / ".claude"
+        claude_dir.mkdir(parents=True, exist_ok=True)
+        (claude_dir / "settings.local.json").write_text(
+            json.dumps(
+                {
+                    "permissions": {"allow": ["Bash(sleep:*)"], "deny": []},
+                    "env": {"WORKER_DIR": worker_dir_value},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def test_include_worktrees_descends(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            wt = base / ".worktrees" / "branch-a"
+            self._make_settings(wt, str(wt.resolve()))
+            findings = check_worker_settings(
+                {"worker_roles": {"x": self.TEMPLATE}}, base
+            )
+            self.assertEqual(findings, [])
+
+    def test_include_worktrees_false_skips(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            wt = base / ".worktrees" / "branch-a"
+            # populate with config that would NOT match — to assert we skip
+            self._make_settings(wt, "/wrong/path")
+            findings = check_worker_settings(
+                {"worker_roles": {"x": self.TEMPLATE}},
+                base,
+                include_worktrees=False,
+            )
+            # No finding because we never even looked at .worktrees
+            self.assertEqual(findings, [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,6 @@
 # Public API Surface — 0.x
 
-> **Status: 0.3.0 published.** This document tracks the evolving public
+> **Status: 0.3.1 published.** This document tracks the evolving public
 > surface during the pre-1.0 phase. Items below are *experimental*
 > unless explicitly marked `stable`; signatures may change between
 > minor versions per [`semver-policy.md`](semver-policy.md).
@@ -15,7 +15,7 @@
 | `core_harness.hooks` | experimental | PreToolUse hook contract (Step C, 0.2). Python helper + bash companion lib + `docs/hook-contract.md`. |
 | `core_harness.audit` | experimental | Journal API (Step D, 0.3). Python `Journal` class + bash companion lib + `docs/journal-contract.md`. |
 
-## Public symbols (0.2)
+## Public symbols (0.3.1)
 
 ### `core_harness.schema`
 
@@ -24,19 +24,20 @@
 | `load_framework_schema() -> dict` | experimental | Return the framework JSON Schema (deep copy). |
 | `framework_schema_path() -> Path` | experimental | On-disk path to the framework JSON file. |
 | `merge_schemas(framework: dict \| None, org_extension: dict) -> dict` | experimental | Merge framework defaults with org-extension; result has `global`, `required_hook_scripts`, `roles`, `worker_roles` always present. |
+| `SchemaError` | experimental | Raised by `merge_schemas` for malformed schema input. |
 
 ### `core_harness.validator`
 
 | Symbol | Status | Purpose |
 |---|---|---|
 | `validate_settings(settings, framework, org_extension, *, role, ...) -> ValidationResult` | experimental | Top-level entry. |
-| `validate_config(source, role, config, role_schema, global_schema, *, extra_allowed=None) -> list[Finding]` | experimental | Single-role audit. |
+| `validate_config(source_label, role, config, role_schema, global_schema, *, extra_allowed=None) -> list[Finding]` | experimental | Single-role audit. |
 | `validate_schema_integrity(schema) -> list[Finding]` | experimental | `required_hook_scripts` cross-check. |
 | `extract_role_blocks(md_text, roles) -> dict` | experimental | Pull JSON blocks from a docs projection. |
-| `check_worker_settings(schema, base_dir) -> list[Finding]` | experimental | Drift-check `<base_dir>/*/.claude/settings.local.json`. |
+| `check_worker_settings(schema, base_dir, *, include_worktrees=True) -> list[Finding]` | experimental | Drift-check `<base_dir>/*/.claude/settings.local.json`. When `include_worktrees=True` (default since 0.3.1), descends one level into `<base_dir>/.worktrees/<branch>/`. |
 | `matches_worker_template(config, template, *, expected_worker_dir=None) -> bool` | experimental | Placeholder-consistent template match. |
 | `Finding(source, role, severity, message)` | experimental | Result entry. |
-| `ValidationResult(findings)` | experimental | Aggregated result with `.ok`. |
+| `ValidationResult(findings)` | experimental | Aggregated result with `.ok`. **0.3.1+: `bool(result)` raises `TypeError` to prevent ambiguity — use `result.ok` explicitly.** |
 
 ### `core_harness.generator`
 
@@ -44,6 +45,7 @@
 |---|---|---|
 | `generate_settings(role, worker_dir, framework, org_extension, *, consumer_root=None, extra_placeholders=None) -> dict` | experimental | Top-level entry. |
 | `render_role(schema, role, **placeholders) -> dict` | experimental | Render a single `worker_roles` template. |
+| `UnresolvedPlaceholderError` | experimental | Raised by `render_role` / `generate_settings` when a `{placeholder}` cannot be substituted. |
 
 ### Placeholders recognised by the generator
 
@@ -103,9 +105,8 @@ Sourced via the path returned by `lib_path()`. Public functions:
 
 #### Bash companion (`audit/lib/journal_append.sh`)
 
-Shipped as package data; consumers locate it via `pip show
-core-harness` + `src/core_harness/audit/lib/journal_append.sh`, or
-import-and-introspect from Python (`Path(core_harness.audit.__file__).parent / "lib" / "journal_append.sh"`).
+Shipped as package data; consumers locate it via Python introspection:
+`Path(core_harness.audit.__file__).parent / "lib" / "journal_append.sh"`.
 Public functions: `journal_append <path> <event> [k=v ...]`,
 `journal_append_raw <path>` (stdin-driven). See
 [`journal-contract.md`](journal-contract.md) for the full spec.

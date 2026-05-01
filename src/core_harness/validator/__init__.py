@@ -61,7 +61,10 @@ class ValidationResult:
         return not any(f.severity == "ERROR" for f in self.findings)
 
     def __bool__(self) -> bool:
-        return self.ok
+        raise TypeError(
+            "Truth value of ValidationResult is ambiguous; "
+            "use `result.ok` (no errors) or `bool(result.findings)` (has any findings)."
+        )
 
     def __iter__(self) -> Iterator:
         return iter(self.findings)
@@ -444,9 +447,20 @@ def matches_worker_template(
     return True
 
 
-def check_worker_settings(schema: dict, base_dir) -> list:
+def check_worker_settings(
+    schema: dict,
+    base_dir,
+    *,
+    include_worktrees: bool = True,
+) -> list:
     """Walk ``<base_dir>/*/.claude/settings.local.json`` and report
-    drift against the ``worker_roles`` templates from ``schema``."""
+    drift against the ``worker_roles`` templates from ``schema``.
+
+    When ``include_worktrees`` is True (default), directories named
+    ``.worktrees`` are descended into one level so worker checkouts
+    living under ``<base_dir>/.worktrees/<branch>/`` are audited too.
+    Pass ``False`` for the legacy 0.3.0 behaviour.
+    """
     findings: list = []
     base_dir = Path(base_dir)
     if not base_dir.is_dir():
@@ -472,7 +486,17 @@ def check_worker_settings(schema: dict, base_dir) -> list:
         )
         return findings
 
-    for worker_dir in sorted(p for p in base_dir.iterdir() if p.is_dir()):
+    candidate_dirs: list = sorted(
+        p for p in base_dir.iterdir() if p.is_dir() and p.name != ".worktrees"
+    )
+    if include_worktrees:
+        wt_dir = base_dir / ".worktrees"
+        if wt_dir.is_dir():
+            candidate_dirs.extend(
+                sorted(p for p in wt_dir.iterdir() if p.is_dir())
+            )
+
+    for worker_dir in candidate_dirs:
         settings_path = worker_dir / ".claude" / "settings.local.json"
         if not settings_path.is_file():
             continue

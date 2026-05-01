@@ -49,7 +49,7 @@ require_dependency() {
   local bin
   for bin in "$@"; do
     if ! command -v "$bin" >/dev/null 2>&1; then
-      block_with_message "$bin がインストールされていません。セキュリティ Hook の実行に必要です。"
+      block_with_message "$bin is not installed; required by security hook."
     fi
   done
 }
@@ -60,7 +60,7 @@ require_dependency() {
 __core_harness_read_stdin_once() {
   if [[ -z "${__CORE_HARNESS_PRETOOLUSE_INPUT+x}" ]]; then
     if ! command -v jq >/dev/null 2>&1; then
-      block_with_message "jq がインストールされていません。セキュリティ Hook の実行に必要です。"
+      block_with_message "jq is not installed; required by security hook."
     fi
     __CORE_HARNESS_PRETOOLUSE_INPUT=$(cat)
   fi

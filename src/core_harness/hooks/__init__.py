@@ -109,11 +109,11 @@ class HookRunner:
             payload = json.loads(raw)
         except (ValueError, TypeError) as exc:
             self.exit_with_block(
-                f"PreToolUse JSON のパースに失敗しました: {exc}"
+                f"Failed to parse PreToolUse JSON: {exc}"
             )
         if not isinstance(payload, dict):
             self.exit_with_block(
-                "PreToolUse payload が JSON object ではありません"
+                "PreToolUse payload is not a JSON object"
             )
         return payload
 

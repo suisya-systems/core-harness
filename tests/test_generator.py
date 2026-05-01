@@ -10,7 +10,11 @@ from __future__ import annotations
 
 import unittest
 
-from core_harness.generator import generate_settings, render_role
+from core_harness.generator import (
+    UnresolvedPlaceholderError,
+    generate_settings,
+    render_role,
+)
 from core_harness.schema import load_framework_schema
 
 
@@ -141,6 +145,28 @@ class GenerateSettingsTests(unittest.TestCase):
         )
         self.assertEqual(out["env"]["OLD"], "/co")
         self.assertEqual(out["env"]["NEW"], "/co")
+
+
+class FailClosedTests(unittest.TestCase):
+    def test_render_role_raises_on_unresolved_placeholder(self):
+        with self.assertRaises(UnresolvedPlaceholderError) as ctx:
+            render_role(
+                _fixture_schema(),
+                "default",
+                worker_dir="/abs/wd",
+                # consumer_root deliberately omitted
+            )
+        self.assertIn("consumer_root", str(ctx.exception))
+
+    def test_generate_settings_raises_on_missing_consumer_root(self):
+        with self.assertRaises(UnresolvedPlaceholderError):
+            generate_settings(
+                "default",
+                "/abs/wd",
+                None,
+                _fixture_schema(),
+                # consumer_root missing — fail closed
+            )
 
 
 if __name__ == "__main__":

@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
-from core_harness.schema import merge_schemas
+from core_harness.schema import SchemaError, merge_schemas
 
 
 # ---------------------------------------------------------------------------
@@ -75,22 +75,49 @@ class ValidationResult:
 # ---------------------------------------------------------------------------
 
 
+def _safe_dict(v: Any) -> dict:
+    return v if isinstance(v, dict) else {}
+
+
+def _safe_list(v: Any) -> list:
+    return v if isinstance(v, list) else []
+
+
 def _get_allow(config: dict) -> list:
-    return ((config.get("permissions") or {}).get("allow")) or []
+    return _safe_list(_safe_dict(config.get("permissions")).get("allow"))
 
 
 def _get_deny(config: dict) -> list:
-    return ((config.get("permissions") or {}).get("deny")) or []
+    return _safe_list(_safe_dict(config.get("permissions")).get("deny"))
 
 
 def _iter_hooks(config: dict) -> Iterable:
-    hooks = config.get("hooks") or {}
+    hooks = _safe_dict(config.get("hooks"))
     for event, entries in hooks.items():
-        for entry in entries or []:
+        for entry in _safe_list(entries):
+            if not isinstance(entry, dict):
+                continue
             matcher = entry.get("matcher", "") or ""
-            for sub in entry.get("hooks") or []:
+            if not isinstance(matcher, str):
+                matcher = ""
+            for sub in _safe_list(entry.get("hooks")):
+                if not isinstance(sub, dict):
+                    continue
                 cmd = sub.get("command", "") or ""
+                if not isinstance(cmd, str):
+                    cmd = ""
                 yield event, matcher, cmd
+
+
+def _safe_compile(pattern: str) -> Any:
+    """Compile a regex; return None on failure so the caller can record a
+    Finding instead of letting ``re.error`` escape (Layer 1 must turn
+    every form of malformed input into a closed-form audit failure).
+    """
+    try:
+        return re.compile(pattern)
+    except re.error:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +146,16 @@ def validate_config(
     if config is None:
         findings.append(Finding(source_label, role_name, "ERROR", "config block missing"))
         return findings
+    if not isinstance(config, dict):
+        findings.append(
+            Finding(
+                source_label,
+                role_name,
+                "ERROR",
+                f"config must be a dict, got {type(config).__name__}",
+            )
+        )
+        return findings
     if "__parse_error__" in config:
         findings.append(
             Finding(
@@ -139,7 +176,17 @@ def validate_config(
                 Finding(source_label, role_name, "ERROR", f"forbidden wide allow entry: {entry!r}")
             )
     for pattern in global_schema.get("forbidden_allow_regex", []):
-        rgx = re.compile(pattern)
+        rgx = _safe_compile(pattern)
+        if rgx is None:
+            findings.append(
+                Finding(
+                    source_label,
+                    role_name,
+                    "ERROR",
+                    f"global.forbidden_allow_regex contains invalid regex /{pattern}/",
+                )
+            )
+            continue
         for entry in allow:
             if rgx.search(entry):
                 findings.append(
@@ -152,7 +199,17 @@ def validate_config(
                 )
 
     for pattern in role_schema.get("disallow_allow_regex", []):
-        rgx = re.compile(pattern)
+        rgx = _safe_compile(pattern)
+        if rgx is None:
+            findings.append(
+                Finding(
+                    source_label,
+                    role_name,
+                    "ERROR",
+                    f"disallow_allow_regex contains invalid regex /{pattern}/",
+                )
+            )
+            continue
         for entry in allow:
             if rgx.search(entry):
                 findings.append(
@@ -174,7 +231,20 @@ def validate_config(
 
     if role_schema.get("closed_world"):
         required_set = set(required_allow)
-        extra_patterns = [re.compile(p) for p in role_schema.get("allowed_allow_regex", [])]
+        extra_patterns = []
+        for raw in role_schema.get("allowed_allow_regex", []):
+            compiled = _safe_compile(raw)
+            if compiled is None:
+                findings.append(
+                    Finding(
+                        source_label,
+                        role_name,
+                        "ERROR",
+                        f"allowed_allow_regex contains invalid regex /{raw}/",
+                    )
+                )
+                continue
+            extra_patterns.append(compiled)
         override_set = extra_allowed or set()
         for entry in allow:
             if entry in required_set:
@@ -357,11 +427,17 @@ def matches_worker_template(
     its captured value must agree across all occurrences in one match
     attempt. When ``expected_worker_dir`` is supplied, the
     ``{worker_dir}`` capture must equal it (path-separator
-    normalised).
+    normalised). A capture whose value still contains a literal
+    ``{name}`` token is rejected — Layer 1 must not declare an
+    unsubstituted settings file as "matching" the template, since that
+    would silently disable hook commands.
     """
     bindings: dict = {}
     if not _match(config, template, bindings):
         return False
+    for captured in bindings.values():
+        if isinstance(captured, str) and _PLACEHOLDER_PATTERN.search(captured):
+            return False
     if expected_worker_dir is not None and "{worker_dir}" in bindings:
         if _norm_path(bindings["{worker_dir}"]) != _norm_path(expected_worker_dir):
             return False
@@ -461,8 +537,12 @@ def validate_settings(
 
     ``role`` selects which entry under ``roles{}`` to validate against.
     """
-    merged = merge_schemas(framework_schema, org_extension_schema)
     findings: list = []
+    try:
+        merged = merge_schemas(framework_schema, org_extension_schema)
+    except SchemaError as exc:
+        findings.append(Finding("schema", "<global>", "ERROR", str(exc)))
+        return ValidationResult(findings=findings)
     if check_integrity:
         findings.extend(validate_schema_integrity(merged))
     role_schema = merged["roles"].get(role)

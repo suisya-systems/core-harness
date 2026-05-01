@@ -14,6 +14,7 @@ import unittest
 from pathlib import Path
 
 from core_harness.schema import (
+    SchemaError,
     framework_schema_path,
     load_framework_schema,
     merge_schemas,
@@ -346,6 +347,66 @@ class FindingTests(unittest.TestCase):
     def test_format(self):
         f = Finding("src", "role", "ERROR", "boom")
         self.assertEqual(f.format(), "[ERROR] src :: role :: boom")
+
+
+class FailClosedTests(unittest.TestCase):
+    """Layer 1 must turn malformed input into errors, not exceptions."""
+
+    def test_merge_rejects_non_list_forbidden_regex(self):
+        ext = {"global": {"forbidden_allow_regex": "not a list"}}
+        with self.assertRaises(SchemaError):
+            merge_schemas(None, ext)
+
+    def test_merge_rejects_invalid_regex(self):
+        ext = {"global": {"forbidden_allow_regex": ["["]}}
+        with self.assertRaises(SchemaError):
+            merge_schemas(None, ext)
+
+    def test_merge_rejects_non_dict_role(self):
+        ext = {"roles": {"alpha": "not a dict"}}
+        with self.assertRaises(SchemaError):
+            merge_schemas(None, ext)
+
+    def test_merge_rejects_non_string_required_hook_script(self):
+        ext = {"required_hook_scripts": [123]}
+        with self.assertRaises(SchemaError):
+            merge_schemas(None, ext)
+
+    def test_validate_settings_surfaces_schema_error(self):
+        bad_ext = {"global": {"forbidden_allow_regex": ["["]}}
+        result = validate_settings(
+            {"permissions": {"allow": []}},
+            None,
+            bad_ext,
+            role="alpha",
+        )
+        self.assertFalse(result.ok)
+        self.assertTrue(any("invalid regex" in f.message for f in result))
+
+    def test_validate_config_handles_non_dict_config(self):
+        merged = merge_schemas(None, _minimal_extension_schema())
+        findings = validate_config(
+            "test", "alpha", "i am not a dict", merged["roles"]["alpha"], merged["global"]
+        )
+        self.assertTrue(any("must be a dict" in f.message for f in findings))
+
+    def test_validate_config_handles_malformed_hooks(self):
+        merged = merge_schemas(None, _minimal_extension_schema())
+        # hooks entry is a string instead of a list of dicts
+        config = {
+            "permissions": {"allow": ["Bash(echo:*)"], "deny": ["Bash(rm -rf *)"]},
+            "hooks": "garbage",
+        }
+        findings = validate_config(
+            "test", "beta", config, merged["roles"]["beta"], merged["global"]
+        )
+        # missing required hook is detected; engine does not crash
+        self.assertTrue(any("missing required hook" in f.message for f in findings))
+
+    def test_matches_worker_template_rejects_unsubstituted_capture(self):
+        template = {"env": {"X": "{consumer_root}"}}
+        leaky_config = {"env": {"X": "{consumer_root}"}}  # placeholder leaked
+        self.assertFalse(matches_worker_template(leaky_config, template))
 
 
 if __name__ == "__main__":

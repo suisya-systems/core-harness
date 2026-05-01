@@ -2,8 +2,49 @@
 
 Layer 1 of the claude-org architecture. See README.md and
 docs/canonical-ownership.md.
+
+Public surface (0.1, see docs/api-surface-v0.x.md):
+
+* ``core_harness.schema``    — framework JSON Schema + merge helper.
+* ``core_harness.validator`` — settings.local.json audit engine.
+* ``core_harness.generator`` — worker_role template renderer.
 """
 
-__version__ = "0.0.1"
+from core_harness.generator import generate_settings, render_role
+from core_harness.schema import (
+    framework_schema_path,
+    load_framework_schema,
+    merge_schemas,
+)
+from core_harness.validator import (
+    Finding,
+    ValidationResult,
+    check_worker_settings,
+    extract_role_blocks,
+    matches_worker_template,
+    validate_config,
+    validate_schema_integrity,
+    validate_settings,
+)
 
-__all__ = ["__version__"]
+__version__ = "0.1.0"
+
+__all__ = [
+    "__version__",
+    # schema
+    "load_framework_schema",
+    "framework_schema_path",
+    "merge_schemas",
+    # validator
+    "Finding",
+    "ValidationResult",
+    "validate_settings",
+    "validate_config",
+    "validate_schema_integrity",
+    "extract_role_blocks",
+    "check_worker_settings",
+    "matches_worker_template",
+    # generator
+    "generate_settings",
+    "render_role",
+]

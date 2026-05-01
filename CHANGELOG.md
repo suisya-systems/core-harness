@@ -8,6 +8,52 @@ and this project adheres to pre-1.0 semantic versioning as defined in
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-02
+
+### Added
+
+- `core_harness.audit` (Step D — journal API, refs ja#128 / design
+  PR #196 §4 Step D):
+  - `Journal` class — append-only JSON-Lines journal with
+    consumer-supplied path. Public methods `append(event, **fields)`,
+    `iter_events(filter_event=None, since=None)`, `tail(n)`.
+  - Module-level convenience wrappers `append_event(path, event,
+    **fields)` and `iter_events(path, filter_event, since)`.
+  - Exception hierarchy: `JournalError` (parent), `JournalLockError`,
+    `JournalReadError`.
+  - Concurrent-write safety: `fcntl.flock(LOCK_EX)` on POSIX,
+    `msvcrt.locking()` on Windows, plus an in-process mutex keyed by
+    absolute path so multi-threaded appenders inside one interpreter
+    are also serialized.
+  - Reader tolerance: blank lines, broken JSON, and non-object lines
+    are skipped with a `UserWarning` (matches the de-facto contract
+    documented in inventory §4).
+- `core_harness/audit/lib/journal_append.sh` — bash companion library
+  with `journal_append <path> <event> [k=v ...]` and
+  `journal_append_raw <path>` (stdin-driven). Uses `jq` for safe JSON
+  encoding, takes `flock(1)` when available.
+- `docs/journal-contract.md` — wire-format / concurrency / reader
+  tolerance specification.
+- `tests/test_audit.py`, `tests/test_audit_bash.sh` — generic-only
+  framework tests (no consumer-org event names).
+
+### Changed
+
+- `core_harness.audit` graduated from placeholder to experimental.
+- `pyproject.toml`: bumped to 0.3.0; `core_harness.audit` now ships
+  `lib/*.sh` as package data alongside `core_harness.hooks`.
+
+### Notes
+
+- The journal file path is **consumer-injected** (Q4 one-way
+  dependency rule). Layer 1 never reads consumer-shaped env vars to
+  discover it; the consumer instantiates `Journal(Path(...))` or
+  passes the path explicitly to `append_event`.
+- The event-type catalog (e.g. `worker_spawned`, `pr_merged`, …) and
+  per-event field conventions remain in the consumer repo. Layer 1
+  owns the *how* (envelope, locking, reader tolerance), not the
+  *what*.
+
 ## [0.2.0] - 2026-05-02
 
 ### Added

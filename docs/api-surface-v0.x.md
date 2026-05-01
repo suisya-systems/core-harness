@@ -1,19 +1,19 @@
 # Public API Surface — 0.x
 
-> **Status: 0.2.0 published.** This document tracks the evolving public
+> **Status: 0.3.0 published.** This document tracks the evolving public
 > surface during the pre-1.0 phase. Items below are *experimental*
 > unless explicitly marked `stable`; signatures may change between
 > minor versions per [`semver-policy.md`](semver-policy.md).
 
 ## Modules
 
-| Module | Status (0.2) | Notes |
+| Module | Status (0.3) | Notes |
 |---|---|---|
 | `core_harness.schema` | experimental | Framework JSON Schema + merge helper. Type-only — concrete role names / consumer regexes live in the org-extension schema (PR #196 §3). |
 | `core_harness.validator` | experimental | Audit engine for per-role `settings.local.json`. |
 | `core_harness.generator` | experimental | Worker `settings.local.json` template renderer. |
 | `core_harness.hooks` | experimental | PreToolUse hook contract (Step C, 0.2). Python helper + bash companion lib + `docs/hook-contract.md`. |
-| `core_harness.audit` | placeholder | Journal API (Step D). |
+| `core_harness.audit` | experimental | Journal API (Step D, 0.3). Python `Journal` class + bash companion lib + `docs/journal-contract.md`. |
 
 ## Public symbols (0.2)
 
@@ -86,6 +86,36 @@ Sourced via the path returned by `lib_path()`. Public functions:
   with a locale-specific contract (e.g. claude-org-ja's
   `"ブロック: "`) export this at their org boundary so Layer 1 stays
   unaware of consumer locale.
+
+### `core_harness.audit`
+
+| Symbol | Status | Purpose |
+|---|---|---|
+| `Journal(path: Path)` | experimental | Append-only JSON-Lines journal bound to a consumer-supplied path. |
+| `Journal.append(event: str, **fields) -> None` | experimental | Append one event line. Adds `ts` (ISO-8601 UTC) automatically; rejects reserved keys (`ts`, `event`) in `fields`. |
+| `Journal.iter_events(filter_event=None, since=None) -> Iterator[dict]` | experimental | Stream events; skips blank / malformed / non-object lines with `UserWarning`. |
+| `Journal.tail(n: int) -> list[dict]` | experimental | Last `n` valid events, oldest-first. |
+| `append_event(path, event, **fields) -> None` | experimental | Module-level convenience for `Journal(path).append(...)`. |
+| `iter_events(path, filter_event=None, since=None)` | experimental | Module-level convenience for `Journal(path).iter_events(...)`. |
+| `JournalError` | experimental | Base exception. |
+| `JournalLockError` | experimental | Raised when exclusive append lock cannot be acquired. |
+| `JournalReadError` | experimental | Raised when the journal file cannot be opened for reading. |
+
+#### Bash companion (`audit/lib/journal_append.sh`)
+
+Shipped as package data; consumers locate it via `pip show
+core-harness` + `src/core_harness/audit/lib/journal_append.sh`, or
+import-and-introspect from Python (`Path(core_harness.audit.__file__).parent / "lib" / "journal_append.sh"`).
+Public functions: `journal_append <path> <event> [k=v ...]`,
+`journal_append_raw <path>` (stdin-driven). See
+[`journal-contract.md`](journal-contract.md) for the full spec.
+
+#### Concurrency
+
+`Journal.append` holds an exclusive file lock (`fcntl.flock` on POSIX,
+`msvcrt.locking` on Windows) plus an in-process mutex keyed by the
+resolved absolute path; concurrent appends from threads / processes
+are serialized. The bash helper uses `flock(1)` when available.
 
 ## 1.0 graduation conditions
 

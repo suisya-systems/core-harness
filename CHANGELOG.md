@@ -8,6 +8,60 @@ and this project adheres to pre-1.0 semantic versioning as defined in
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-05-02
+
+Patch release — Q4 purity finalization, security hardening, and API
+clarification, driven by the phase3 cross-review (refs ja#128).
+
+### Changed (potentially breaking — pre-1.0 minor)
+
+- `validator.ValidationResult.__bool__` now raises `TypeError`. The
+  prior implicit truthiness check (`if result: ...`) was ambiguous —
+  callers split between "no errors" and "has any findings". Use
+  `result.ok` (no `ERROR`-severity findings) explicitly. The bound
+  `bool(result.findings)` keeps working for "has any findings" callers.
+- `validator.check_worker_settings(schema, base_dir)` gained a
+  keyword-only `include_worktrees: bool = True` parameter. Default
+  `True` causes one extra level of descent into
+  `<base_dir>/.worktrees/<branch>/.claude/settings.local.json`, so
+  worker checkouts living under a `.worktrees/` parent are now audited.
+  Pass `include_worktrees=False` to restore the 0.3.0 behaviour.
+
+### Security
+
+- `audit/lib/journal_append.sh`: when `flock(1)` is missing, the
+  fallback branch now emits a one-line stderr warning so callers learn
+  their concurrent appends are unprotected. Recommended fix is to use
+  the Python API (`Journal.append`) which uses `fcntl.flock` /
+  `msvcrt.locking` directly.
+
+### Fixed (Q4 purity)
+
+- `hooks.HookRunner.parse_pretooluse_stdin` block messages were
+  hardcoded Japanese; now neutral English ("Failed to parse PreToolUse
+  JSON: …" / "PreToolUse payload is not a JSON object"). Consumers with
+  a localized contract still inject prefix/locale via
+  `CORE_HARNESS_BLOCK_PREFIX` or `HookRunner(block_prefix=...)`.
+- `hooks/lib/core_harness_hooks.sh` `require_dependency` and the
+  internal `_jq` check messages were hardcoded Japanese; now neutral
+  English.
+- `core_harness/__init__.py` top docstring no longer references the
+  original consumer ("claude-org") by name.
+
+### Added
+
+- `core_harness.SchemaError` and `core_harness.UnresolvedPlaceholderError`
+  re-exported at package root and listed in
+  `docs/api-surface-v0.x.md` (they were already public via their
+  submodules; this just makes the surface document match reality).
+
+### Docs
+
+- `docs/api-surface-v0.x.md`: heading bumped to 0.3.1; `pip show`
+  reference removed in favour of the Python introspection recipe;
+  `validate_config` argument renamed to `source_label` to match the
+  implementation.
+
 ## [0.3.0] - 2026-05-02
 
 ### Added

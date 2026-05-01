@@ -58,6 +58,7 @@ _journal_write_locked() {
         # Best-effort: ``>>`` in POSIX shell is O_APPEND; concurrent
         # writes <= PIPE_BUF are atomic on Linux. Cross-process safety
         # without flock is not guaranteed — see module docstring.
+        printf 'core_harness.audit: warning: flock(1) not available; concurrent writes are not protected. Use the Python API for guaranteed concurrency safety.\n' >&2
         cat >> "$path"
     fi
 }

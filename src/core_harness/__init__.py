@@ -1,17 +1,22 @@
 """core-harness: reusable safety primitives for Claude Code orchestrator harnesses.
 
-Layer 1 of the claude-org architecture. See README.md and
+Layer 1 of a consumer harness architecture. See README.md and
 docs/canonical-ownership.md.
 
-Public surface (0.1, see docs/api-surface-v0.x.md):
+Public surface (0.3.1, see docs/api-surface-v0.x.md):
 
 * ``core_harness.schema``    — framework JSON Schema + merge helper.
 * ``core_harness.validator`` — settings.local.json audit engine.
 * ``core_harness.generator`` — worker_role template renderer.
 """
 
-from core_harness.generator import generate_settings, render_role
+from core_harness.generator import (
+    UnresolvedPlaceholderError,
+    generate_settings,
+    render_role,
+)
 from core_harness.schema import (
+    SchemaError,
     framework_schema_path,
     load_framework_schema,
     merge_schemas,
@@ -27,11 +32,12 @@ from core_harness.validator import (
     validate_settings,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.3.1"
 
 __all__ = [
     "__version__",
     # schema
+    "SchemaError",
     "load_framework_schema",
     "framework_schema_path",
     "merge_schemas",
@@ -45,6 +51,7 @@ __all__ = [
     "check_worker_settings",
     "matches_worker_template",
     # generator
+    "UnresolvedPlaceholderError",
     "generate_settings",
     "render_role",
 ]

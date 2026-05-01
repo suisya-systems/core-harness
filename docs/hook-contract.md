@@ -41,12 +41,18 @@ The deny-reason line follows the format:
 {block_prefix}{reason}
 ```
 
-where `{block_prefix}` defaults to `"ブロック: "` (legacy compatibility
-with claude-org-ja's existing 380+ hook tests) and is overridable per
-process via the `CORE_HARNESS_BLOCK_PREFIX` environment variable, or
-per-call via `HookRunner(block_prefix=...)` in Python /
+where `{block_prefix}` defaults to the neutral English `"Blocked: "`.
+Layer 1 ships no consumer-specific locale string. Consumers that need a
+different prefix (for example claude-org-ja's legacy `"ブロック: "`
+contract used by 380+ existing hook tests) inject it per process via
+the `CORE_HARNESS_BLOCK_PREFIX` environment variable, or per-call via
+`HookRunner(block_prefix=...)` in Python /
 `CORE_HARNESS_BLOCK_PREFIX=...` exported before sourcing
 `core_harness_hooks.sh` in bash.
+
+Resolution order (Python and bash both): explicit constructor argument
+→ `CORE_HARNESS_BLOCK_PREFIX` env var → `DEFAULT_BLOCK_PREFIX`
+(`"Blocked: "`).
 
 Future minor versions may introduce a typed (JSON) stderr alternative
 behind a feature flag; the plain-text contract documented here remains
@@ -75,9 +81,10 @@ runner.exit_ok()
 - `exit_with_block(message)`: writes `{prefix}{message}\n` to stderr,
   flushes, exits 2. Never returns.
 - `exit_ok()`: exits 0. Never returns.
-- The block-message prefix defaults to `"ブロック: "` and is resolved in
-  this priority order: explicit constructor argument →
-  `CORE_HARNESS_BLOCK_PREFIX` env var → `DEFAULT_BLOCK_PREFIX`.
+- The block-message prefix defaults to `"Blocked: "` (neutral English)
+  and is resolved in this priority order: explicit constructor
+  argument → `CORE_HARNESS_BLOCK_PREFIX` env var →
+  `DEFAULT_BLOCK_PREFIX`.
 
 ## 3. Bash helper API
 
@@ -138,14 +145,22 @@ can call several without re-reading stdin.
 - Path-normalisation helpers tied to the consumer's directory layout —
   consumers ship those alongside their org-specific hooks.
 
-## 5. Backward compatibility
+## 5. Consumer-specific localisation
 
-The default block-message prefix `"ブロック: "` exists solely to keep the
-original consumer's existing hook test suite green during the 0.x
-transition. New consumers SHOULD set `CORE_HARNESS_BLOCK_PREFIX` to a
-value appropriate for their locale (e.g. `"BLOCKED: "`). The default
-may be retired no earlier than 1.0, with a deprecation warning at
-0.(N-1).
+Layer 1 (`core-harness`) ships only the neutral English default
+`"Blocked: "`. Consumers with a localised contract — for example
+claude-org-ja's legacy `"ブロック: "` deny-line, used by an existing
+380+ hook test suite — inject their prefix at the org boundary, never
+inside `core-harness`:
+
+- **Python** consumers: instantiate `HookRunner(block_prefix="ブロック: ")`,
+  or set `CORE_HARNESS_BLOCK_PREFIX` once at process start.
+- **Bash** consumers: `export CORE_HARNESS_BLOCK_PREFIX="ブロック: "`
+  before sourcing `core_harness_hooks.sh`.
+
+This keeps the dependency one-way: `core-harness` does not know about
+any consumer's locale, and adding a new consumer with a different
+locale does not require a `core-harness` release.
 
 ## 6. Open questions tracked for 1.0
 

@@ -66,7 +66,7 @@
 | `exit_with_block(message)` | experimental | Module-level convenience for `HookRunner().exit_with_block(message)`. |
 | `exit_ok()` | experimental | Module-level convenience for `HookRunner().exit_ok()`. |
 | `lib_path() -> Path` | experimental | On-disk directory of the bash companion library (`core_harness_hooks.sh`). |
-| `DEFAULT_BLOCK_PREFIX` | experimental | Default deny-line prefix (`"ブロック: "`). |
+| `DEFAULT_BLOCK_PREFIX` | experimental | Default deny-line prefix (`"Blocked: "`, neutral English; consumers override). |
 | `BLOCK_EXIT_CODE` | experimental | `2` — deny exit code. |
 | `ALLOW_EXIT_CODE` | experimental | `0` — allow exit code. |
 
@@ -81,9 +81,11 @@ Sourced via the path returned by `lib_path()`. Public functions:
 
 #### Environment variables
 
-- `CORE_HARNESS_BLOCK_PREFIX` — overrides the default `"ブロック: "`
-  prefix in both the Python helper and the bash companion. Set this
-  for non-Japanese consumers.
+- `CORE_HARNESS_BLOCK_PREFIX` — overrides the default `"Blocked: "`
+  prefix in both the Python helper and the bash companion. Consumers
+  with a locale-specific contract (e.g. claude-org-ja's
+  `"ブロック: "`) export this at their org boundary so Layer 1 stays
+  unaware of consumer locale.
 
 ## 1.0 graduation conditions
 

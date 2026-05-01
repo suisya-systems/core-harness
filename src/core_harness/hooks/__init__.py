@@ -11,12 +11,13 @@ Layer 1 framework slice for PreToolUse hook wiring. Owns:
   org-specific hook scripts.
 
 The framework deliberately knows **nothing** about consumer-specific
-concepts: no role names, no path patterns, no Japanese-only string
-constants. The default block-message prefix matches the legacy
-contract for backward compatibility with the original consumer's hook
-tests, but it is overridable via the ``CORE_HARNESS_BLOCK_PREFIX``
-environment variable or ``HookRunner(block_prefix=...)`` argument so
-non-Japanese consumers can localise without forking.
+concepts: no role names, no path patterns, no consumer-locale string
+constants. The default block-message prefix is the neutral English
+``"Blocked: "``; consumers that need a different prefix (e.g.
+claude-org-ja's ``"ブロック: "`` contract) inject it via the
+``CORE_HARNESS_BLOCK_PREFIX`` environment variable or
+``HookRunner(block_prefix=...)`` argument. Layer 1 stays unaware of
+any specific consumer.
 
 See ``docs/hook-contract.md`` for the full specification.
 """
@@ -29,11 +30,14 @@ import sys
 from pathlib import Path
 from typing import Any, IO, Mapping, Optional
 
-DEFAULT_BLOCK_PREFIX = "ブロック: "
-"""Legacy block-message prefix preserved for the original consumer.
+DEFAULT_BLOCK_PREFIX = "Blocked: "
+"""Default block-message prefix.
 
-Overridable per-process via ``CORE_HARNESS_BLOCK_PREFIX`` or per-runner
-via ``HookRunner(block_prefix=...)``.
+Layer-1-neutral English; consumers with org-specific localisation
+(e.g. claude-org-ja's legacy ``"ブロック: "`` contract) override this
+per-process via ``CORE_HARNESS_BLOCK_PREFIX`` or per-runner via
+``HookRunner(block_prefix=...)``. The framework intentionally does not
+ship any consumer-specific string as a default.
 """
 
 BLOCK_EXIT_CODE = 2
@@ -70,8 +74,8 @@ class HookRunner:
     - :meth:`parse_pretooluse_stdin` reads and JSON-decodes the hook
       payload Claude Code delivers on stdin.
     - :meth:`exit_with_block` writes ``{prefix}{message}`` to stderr and
-      exits ``2``. The prefix defaults to the legacy
-      ``"ブロック: "`` string for compatibility, but is overridable.
+      exits ``2``. The prefix defaults to ``"Blocked: "`` (neutral
+      English); consumers override via env var or constructor arg.
     - :meth:`exit_ok` exits ``0``.
 
     Instances are cheap; create one per hook invocation.

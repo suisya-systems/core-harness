@@ -20,9 +20,10 @@
 #   expand_known_vars VAR=val ...          — substitute $VAR / ${VAR}
 #   unwrap_eval_and_bashc                  — pull eval / bash -c / sh -c arguments
 #
-# The block-message prefix defaults to "ブロック: " for back-compat with
-# the original consumer's hook tests; export CORE_HARNESS_BLOCK_PREFIX
-# to override (must include any trailing punctuation/space).
+# The block-message prefix defaults to the neutral English "Blocked: ";
+# consumers that need a different locale-specific prefix (e.g. claude-
+# org-ja's "ブロック: ") export CORE_HARNESS_BLOCK_PREFIX before sourcing
+# this file (must include any trailing punctuation/space).
 #
 # Idempotent: safe to source twice in the same shell.
 
@@ -31,7 +32,7 @@ if [[ -n "${__CORE_HARNESS_HOOKS_SH_SOURCED:-}" ]]; then
 fi
 __CORE_HARNESS_HOOKS_SH_SOURCED=1
 
-: "${CORE_HARNESS_BLOCK_PREFIX:=ブロック: }"
+: "${CORE_HARNESS_BLOCK_PREFIX:=Blocked: }"
 
 # block_with_message <reason>
 #   Print "<prefix><reason>" to stderr and exit 2.

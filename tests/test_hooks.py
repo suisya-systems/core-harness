@@ -42,7 +42,22 @@ class LibPathTests(unittest.TestCase):
         self.assertIsInstance(lib_path(), Path)
 
 
+class DefaultPrefixTests(unittest.TestCase):
+    def test_default_is_neutral_english(self) -> None:
+        # Layer-1 purity: the default ships no consumer-specific locale.
+        # Consumers (e.g. claude-org-ja's "ブロック: ") inject their
+        # own prefix via env or constructor arg.
+        self.assertEqual(DEFAULT_BLOCK_PREFIX, "Blocked: ")
+
+
 class ParseStdinTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._saved_env = os.environ.pop("CORE_HARNESS_BLOCK_PREFIX", None)
+
+    def tearDown(self) -> None:
+        if self._saved_env is not None:
+            os.environ["CORE_HARNESS_BLOCK_PREFIX"] = self._saved_env
+
     def _runner(self, raw: str, *, stderr: io.StringIO | None = None) -> HookRunner:
         return HookRunner(
             stdin=io.StringIO(raw),
@@ -88,12 +103,32 @@ class ParseStdinTests(unittest.TestCase):
 
 class ExitTests(unittest.TestCase):
     def test_exit_with_block_writes_default_prefix(self) -> None:
+        old = os.environ.pop("CORE_HARNESS_BLOCK_PREFIX", None)
+        try:
+            stderr = io.StringIO()
+            runner = HookRunner(stderr=stderr, stdin=io.StringIO(""))
+            with self.assertRaises(SystemExit) as cm:
+                runner.exit_with_block("test reason")
+            self.assertEqual(cm.exception.code, BLOCK_EXIT_CODE)
+            self.assertEqual(stderr.getvalue(), f"{DEFAULT_BLOCK_PREFIX}test reason\n")
+            self.assertTrue(stderr.getvalue().startswith("Blocked: "))
+        finally:
+            if old is not None:
+                os.environ["CORE_HARNESS_BLOCK_PREFIX"] = old
+
+    def test_consumer_can_inject_legacy_japanese_prefix(self) -> None:
+        # Regression: the override path is the contract claude-org-ja
+        # relies on to keep its 380+ existing hook tests green during
+        # the 0.x transition. Don't break this.
         stderr = io.StringIO()
-        runner = HookRunner(stderr=stderr, stdin=io.StringIO(""))
-        with self.assertRaises(SystemExit) as cm:
-            runner.exit_with_block("test reason")
-        self.assertEqual(cm.exception.code, BLOCK_EXIT_CODE)
-        self.assertEqual(stderr.getvalue(), f"{DEFAULT_BLOCK_PREFIX}test reason\n")
+        runner = HookRunner(
+            stderr=stderr,
+            stdin=io.StringIO(""),
+            block_prefix="ブロック: ",
+        )
+        with self.assertRaises(SystemExit):
+            runner.exit_with_block("テスト理由")
+        self.assertEqual(stderr.getvalue(), "ブロック: テスト理由\n")
 
     def test_exit_with_block_uses_explicit_prefix(self) -> None:
         stderr = io.StringIO()

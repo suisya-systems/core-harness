@@ -45,9 +45,27 @@ t_block_exit_code() {
 }
 
 t_block_default_prefix() {
+  # Layer-1 default is the neutral English "Blocked: ". We force a
+  # fresh sub-shell so this test is robust against an inherited
+  # CORE_HARNESS_BLOCK_PREFIX from the calling environment.
   local out
-  out=$( ( block_with_message "test reason" ) 2>&1 || true )
-  [[ "$out" == "ブロック: test reason" ]]
+  out=$(unset CORE_HARNESS_BLOCK_PREFIX; bash -c "
+    source '$LIB_PATH'
+    block_with_message 'test reason'
+  " 2>&1 || true)
+  [[ "$out" == "Blocked: test reason" ]]
+}
+
+t_block_legacy_japanese_via_env() {
+  # The override path the original consumer (claude-org-ja) uses to
+  # keep its existing 380+ hook tests green: export the legacy
+  # "ブロック: " prefix before sourcing the lib.
+  local out
+  out=$( CORE_HARNESS_BLOCK_PREFIX="ブロック: " bash -c "
+    source '$LIB_PATH'
+    block_with_message 'テスト理由'
+  " 2>&1 || true)
+  [[ "$out" == "ブロック: テスト理由" ]]
 }
 
 t_block_env_prefix() {
@@ -192,6 +210,7 @@ echo "running core_harness_hooks.sh tests"
 check "block_with_message exits 2"                 t_block_exit_code
 check "block_with_message default prefix"          t_block_default_prefix
 check "block_with_message env prefix override"     t_block_env_prefix
+check "block_with_message legacy JP via env"       t_block_legacy_japanese_via_env
 check "require_dependency allows present binary"   t_require_dep_present
 check "require_dependency blocks missing binary"   t_require_dep_missing
 check "read_pretooluse_command"                    t_read_command

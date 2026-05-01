@@ -18,9 +18,9 @@ and this project adheres to pre-1.0 semantic versioning as defined in
     `exit_ok`) — Python helper for the PreToolUse hook contract.
   - Module-level convenience wrappers `parse_pretooluse_stdin()`,
     `exit_with_block(message)`, `exit_ok()`.
-  - Constants `DEFAULT_BLOCK_PREFIX` (`"ブロック: "`, retained for
-    legacy consumer-test compatibility), `BLOCK_EXIT_CODE` (= 2),
-    `ALLOW_EXIT_CODE` (= 0).
+  - Constants `DEFAULT_BLOCK_PREFIX` (`"Blocked: "`, neutral English —
+    Layer 1 ships no consumer-specific locale; consumers override),
+    `BLOCK_EXIT_CODE` (= 2), `ALLOW_EXIT_CODE` (= 0).
   - `lib_path()` returning the on-disk directory of the bash companion
     library (path-configurable; consumers source it from there).
   - `CORE_HARNESS_BLOCK_PREFIX` env var + `block_prefix=` constructor
@@ -47,11 +47,13 @@ and this project adheres to pre-1.0 semantic versioning as defined in
 
 ### Notes
 
-- The default block-message prefix `"ブロック: "` exists solely for
-  back-compat with the original consumer's hook test suite during the
-  0.x transition. New consumers SHOULD set
-  `CORE_HARNESS_BLOCK_PREFIX`. The default may be retired no earlier
-  than 1.0 with a deprecation window; see `docs/hook-contract.md` §5.
+- The default block-message prefix is the neutral English
+  `"Blocked: "`. Layer 1 deliberately does not bake any consumer
+  locale into the framework default (Q4 one-way dependency). The
+  original consumer (claude-org-ja) injects its legacy
+  `"ブロック: "` contract at the org boundary via
+  `CORE_HARNESS_BLOCK_PREFIX` / `HookRunner(block_prefix=...)`. See
+  `docs/hook-contract.md` §5.
 - Hook *script bodies* (block-no-verify, block-dangerous-git, etc.)
   remain in the consumer repo for this release; only the wiring
   framework / contract / generic parser library moves up. Movement of

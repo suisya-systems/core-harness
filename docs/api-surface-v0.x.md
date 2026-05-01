@@ -135,8 +135,11 @@ See [`semver-policy.md`](semver-policy.md). In short:
   (`.github/workflows/release.yml`, OIDC / Trusted Publisher).
   PyPI-side Trusted Publisher entry is not yet registered; first
   `v*` tag will only publish once that one-time setup is done.
-- **Doc-comment neutralisation**: complete — no `claude-org` / role-name
-  references remain in `src/` or `docs/`.
+- **Doc-comment neutralisation**: complete — Layer-1 source docstrings,
+  the bash hook library comment, and the canonical / hook / surface
+  contract docs no longer name a specific consuming repo or specific
+  role names. Architecture / "Related" links in `README.md` are kept
+  as deliberate project-history context.
 - **External-consumer count / consecutive-minor count**: still
   pre-1.0 as of v0.3.1; tracked in `semver-policy.md`.
 

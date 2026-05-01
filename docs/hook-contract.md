@@ -43,8 +43,8 @@ The deny-reason line follows the format:
 
 where `{block_prefix}` defaults to the neutral English `"Blocked: "`.
 Layer 1 ships no consumer-specific locale string. Consumers that need a
-different prefix (for example claude-org-ja's legacy `"ブロック: "`
-contract used by 380+ existing hook tests) inject it per process via
+different prefix (for example a localized contract such as
+`"ブロック: "`) inject it per process via
 the `CORE_HARNESS_BLOCK_PREFIX` environment variable, or per-call via
 `HookRunner(block_prefix=...)` in Python /
 `CORE_HARNESS_BLOCK_PREFIX=...` exported before sourcing
@@ -141,17 +141,16 @@ can call several without re-reading stdin.
 - Any specific deny rule (no `--no-verify` blocker, no `git push`
   blocker, no path-based file boundary). Those live in the consumer
   repo, which composes the framework helpers with its own policy.
-- Any role catalogue (no `secretary`, `dispatcher`, `worker`).
+- Any role catalogue (no consumer-specific role names).
 - Path-normalisation helpers tied to the consumer's directory layout —
   consumers ship those alongside their org-specific hooks.
 
 ## 5. Consumer-specific localisation
 
 Layer 1 (`core-harness`) ships only the neutral English default
-`"Blocked: "`. Consumers with a localised contract — for example
-claude-org-ja's legacy `"ブロック: "` deny-line, used by an existing
-380+ hook test suite — inject their prefix at the org boundary, never
-inside `core-harness`:
+`"Blocked: "`. Consumers with a localised contract — for example a
+legacy localized deny-line such as `"ブロック: "` — inject their prefix
+at the org boundary, never inside `core-harness`:
 
 - **Python** consumers: instantiate `HookRunner(block_prefix="ブロック: ")`,
   or set `CORE_HARNESS_BLOCK_PREFIX` once at process start.

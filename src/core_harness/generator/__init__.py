@@ -2,8 +2,9 @@
 
 Renders a concrete ``settings.local.json`` payload from a worker_roles
 template by substituting placeholders such as ``{worker_dir}`` and
-``{consumer_root}`` (the org-neutral name; the consumer's previous
-``{claude_org_path}`` is supported as an alias).
+``{consumer_root}``. Consumers that historically used a different
+placeholder name can register it as an alias of ``consumer_root`` via
+``extra_placeholders``.
 
 Public surface (0.1):
 
@@ -120,9 +121,8 @@ def generate_settings(
     Merges ``framework_schema`` with ``org_extension_schema``, locates
     ``worker_roles[role]`` in the merged dict, and renders it with
     ``{worker_dir}`` / ``{consumer_root}`` substituted. ``extra_placeholders``
-    lets the caller supply additional org-specific aliases (e.g.
-    ``{claude_org_path}``) that point at the same value as
-    ``consumer_root``.
+    lets the caller supply additional consumer-specific aliases that
+    point at the same value as ``consumer_root``.
     """
     merged = merge_schemas(framework_schema, org_extension_schema)
     placeholders: dict = {"worker_dir": worker_dir}

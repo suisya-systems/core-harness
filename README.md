@@ -1,10 +1,11 @@
 # core-harness
 
 [![tests](https://github.com/suisya-systems/core-harness/actions/workflows/tests.yml/badge.svg)](https://github.com/suisya-systems/core-harness/actions/workflows/tests.yml)
+[![PyPI](https://img.shields.io/pypi/v/core-harness.svg)](https://pypi.org/project/core-harness/)
 
 Reusable safety primitives for Claude Code orchestrator harnesses (permission schema, hook framework, audit/journal).
 
-> **Status: pre-1.0, API not frozen.** Latest release: **v0.3.1**. Expect breaking changes between minor versions until 1.0. See [`docs/semver-policy.md`](docs/semver-policy.md).
+> **Status: pre-1.0, API not frozen.** Latest release: **v0.3.2** (published on PyPI). Expect breaking changes between minor versions until 1.0. See [`docs/semver-policy.md`](docs/semver-policy.md).
 
 > **Not an AI agent framework.** `core-harness` provides Claude Code-specific
 > governance primitives (permission schema, hook framework, audit/journal). It
@@ -40,15 +41,27 @@ or audit journal rather than rebuild them.
 ## Install
 
 ```bash
-pip install git+https://github.com/suisya-systems/core-harness@v0.3.1
+pip install core-harness
 ```
 
-PyPI publish is deferred until 1.0; until then GitHub Releases / git tags are
-the only distribution channel.
+`core-harness` is published on PyPI:
+[pypi.org/project/core-harness/](https://pypi.org/project/core-harness/).
+v0.3.2 is the first release shipped via the PyPI Trusted Publisher (OIDC)
+workflow. To pin a specific version:
+
+```bash
+pip install core-harness==0.3.2
+```
+
+Installation directly from a git tag is also supported as a fallback:
+
+```bash
+pip install git+https://github.com/suisya-systems/core-harness@v0.3.2
+```
 
 ## Usage
 
-The shipped public surface in v0.3.1:
+The shipped public surface in v0.3.2:
 
 ### `core_harness.schema`
 
@@ -186,29 +199,25 @@ git tag -s vX.Y.Z -m "vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-**One-time setup before the first PyPI publish.** PyPI must have a
-Trusted Publisher entry registered for this repo. On
-[pypi.org/manage/project/core-harness/settings/publishing/](https://pypi.org/manage/project/core-harness/settings/publishing/),
-add a publisher with:
+**Trusted Publisher setup (one-time).** The Trusted Publisher entry on
+[pypi.org/manage/project/core-harness/settings/publishing/](https://pypi.org/manage/project/core-harness/settings/publishing/)
+is registered as:
 
 - Owner: `suisya-systems`
 - Repository: `core-harness`
 - Workflow: `release.yml`
 - Environment: `pypi`
 
-Until that entry exists, the publish step in `release.yml` will fail.
-The build and GitHub-Release jobs still succeed independently, so
-re-tagging after the entry is registered is enough to publish.
+v0.3.2 was the first release shipped through this pipeline. New tag
+pushes publish to PyPI automatically.
 
-If Trusted Publisher is not desired, the workflow has an API-token
+If Trusted Publisher is ever undesired, the workflow has an API-token
 fallback commented out — uncomment it, drop the `id-token: write`
 permission, and add `PYPI_API_TOKEN` to repo secrets.
 
-PyPI publishing remains deferred until the 1.0 cut; the workflow
-landing here is the skeleton, not a release.
-
 ## Related
 
+- [v0.3.2 release notes](https://github.com/suisya-systems/core-harness/releases/tag/v0.3.2) — first PyPI publish via Trusted Publisher
 - [v0.3.1 release notes](https://github.com/suisya-systems/core-harness/releases/tag/v0.3.1)
 - claude-org-ja Issue [#128](https://github.com/suisya-systems/claude-org-ja/issues/128) (closed) — extraction tracking
 - claude-org-ja PR [#196](https://github.com/suisya-systems/claude-org-ja/pull/196) — extraction design

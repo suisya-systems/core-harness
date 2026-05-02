@@ -1,6 +1,6 @@
 # Public API Surface — 0.x
 
-> **Status: 0.3.1 published.** This document tracks the evolving public
+> **Status: 0.3.2 published on PyPI.** This document tracks the evolving public
 > surface during the pre-1.0 phase. Items below are *experimental*
 > unless explicitly marked `stable`; signatures may change between
 > minor versions per [`semver-policy.md`](semver-policy.md).
@@ -15,7 +15,7 @@
 | `core_harness.hooks` | experimental | PreToolUse hook contract (Step C, 0.2). Python helper + bash companion lib + `docs/hook-contract.md`. |
 | `core_harness.audit` | experimental | Journal API (Step D, 0.3). Python `Journal` class + bash companion lib + `docs/journal-contract.md`. |
 
-## Public symbols (0.3.1)
+## Public symbols (0.3.2)
 
 ### `core_harness.schema`
 
@@ -131,17 +131,16 @@ See [`semver-policy.md`](semver-policy.md). In short:
 - **CI matrix**: landed (`.github/workflows/tests.yml`) — pytest on
   Linux / macOS / Windows × Python 3.10–3.12, plus bash hook + audit
   tests on Linux / macOS.
-- **PyPI publishing pipeline**: skeleton landed
-  (`.github/workflows/release.yml`, OIDC / Trusted Publisher).
-  PyPI-side Trusted Publisher entry is not yet registered; first
-  `v*` tag will only publish once that one-time setup is done.
+- **PyPI publishing pipeline**: live (`.github/workflows/release.yml`,
+  OIDC / Trusted Publisher). v0.3.2 is the first release shipped via
+  this pipeline; subsequent `v*` tag pushes publish automatically.
 - **Doc-comment neutralisation**: complete — Layer-1 source docstrings,
   the bash hook library comment, and the canonical / hook / surface
   contract docs no longer name a specific consuming repo or specific
   role names. Architecture / "Related" links in `README.md` are kept
   as deliberate project-history context.
 - **External-consumer count / consecutive-minor count**: still
-  pre-1.0 as of v0.3.1; tracked in `semver-policy.md`.
+  pre-1.0 as of v0.3.2; tracked in `semver-policy.md`.
 
 ## Conventions used in this document
 

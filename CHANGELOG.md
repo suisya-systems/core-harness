@@ -8,7 +8,12 @@ and this project adheres to pre-1.0 semantic versioning as defined in
 
 ## [Unreleased]
 
-Internal — 1.0 transition prep (no public API changes).
+## [0.3.2] - 2026-05-02
+
+Maintenance release — first publish via PyPI Trusted Publisher (OIDC).
+No public API changes; bundles the 1.0 transition prep that landed on
+`main` after 0.3.1 (CI matrix, release workflow skeleton, README scope
+clarification, and doc-comment neutralisation).
 
 ### Added
 

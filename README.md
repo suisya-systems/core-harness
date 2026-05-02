@@ -1,10 +1,11 @@
 # core-harness
 
 [![tests](https://github.com/suisya-systems/core-harness/actions/workflows/tests.yml/badge.svg)](https://github.com/suisya-systems/core-harness/actions/workflows/tests.yml)
+[![PyPI](https://img.shields.io/pypi/v/core-harness.svg)](https://pypi.org/project/core-harness/)
 
 Reusable safety primitives for Claude Code orchestrator harnesses (permission schema, hook framework, audit/journal).
 
-> **Status: pre-1.0, API not frozen.** Latest release: **v0.3.1**. Expect breaking changes between minor versions until 1.0. See [`docs/semver-policy.md`](docs/semver-policy.md).
+> **Status: pre-1.0, API not frozen.** Latest release: **v0.3.2** (published on PyPI). Expect breaking changes between minor versions until 1.0. See [`docs/semver-policy.md`](docs/semver-policy.md).
 
 > **Not an AI agent framework.** `core-harness` provides Claude Code-specific
 > governance primitives (permission schema, hook framework, audit/journal). It
@@ -40,15 +41,27 @@ or audit journal rather than rebuild them.
 ## Install
 
 ```bash
-pip install git+https://github.com/suisya-systems/core-harness@v0.3.1
+pip install core-harness
 ```
 
-PyPI publish is deferred until 1.0; until then GitHub Releases / git tags are
-the only distribution channel.
+`core-harness` is published on PyPI:
+[pypi.org/project/core-harness/](https://pypi.org/project/core-harness/).
+v0.3.2 is the first release shipped via the PyPI Trusted Publisher (OIDC)
+workflow. To pin a specific version:
+
+```bash
+pip install core-harness==0.3.2
+```
+
+Installation directly from a git tag is also supported as a fallback:
+
+```bash
+pip install git+https://github.com/suisya-systems/core-harness@v0.3.2
+```
 
 ## Usage
 
-The shipped public surface in v0.3.1:
+The shipped public surface in v0.3.2:
 
 ### `core_harness.schema`
 
@@ -74,12 +87,19 @@ the framework schema plus an optional org extension. Returns structured
 ```python
 from core_harness.validator import validate_settings, check_worker_settings
 
-result = validate_settings(settings_path, schema=merged)
+result = validate_settings(
+    settings_local_json,           # parsed dict (or None)
+    framework_schema,              # from load_framework_schema() (or None)
+    org_extension_schema,          # consumer-supplied dict
+    role="worker",
+    source_label=str(settings_path),
+)
 if not result.ok:
     for f in result.findings:
-        print(f.code, f.path, f.message)
+        print(f.severity, f.source, f.role, f.message)
 
-check_worker_settings(worker_dir, schema=merged, include_worktrees=False)
+# Drift-check every worker checkout under base_dir.
+findings = check_worker_settings(merged, base_dir, include_worktrees=True)
 ```
 
 Exports: `validate_settings`, `validate_config`, `validate_schema_integrity`,
@@ -95,7 +115,14 @@ them leak into generated config.
 ```python
 from core_harness.generator import generate_settings, UnresolvedPlaceholderError
 
-generate_settings(role="worker", target_dir=worker_dir, context={...})
+settings = generate_settings(
+    "worker",                      # role name in worker_roles
+    str(worker_dir),               # substituted for {worker_dir}
+    framework_schema,              # from load_framework_schema() (or None)
+    org_extension_schema,
+    consumer_root=str(repo_root),  # optional; substituted for {consumer_root}
+    extra_placeholders={"claude_org_path": str(repo_root)},  # optional aliases
+)
 ```
 
 Exports: `generate_settings`, `render_role`, `UnresolvedPlaceholderError`.
@@ -105,16 +132,22 @@ Exports: `generate_settings`, `render_role`, `UnresolvedPlaceholderError`.
 Standard contract for Claude Code `PreToolUse` hooks: a Python `HookRunner`
 plus a parallel bash library accessible via `lib_path()` for shell-based
 hooks. Block messages are locale-neutral by default (English `"Blocked: "`)
-and overridable via the `CORE_HARNESS_BLOCK_PREFIX` environment variable.
+and overridable via the `CORE_HARNESS_BLOCK_PREFIX` environment variable
+or the `block_prefix=` constructor argument. The hook *policy* (which tool
+calls to deny) lives in the consumer; `core-harness` ships only the wiring,
+the stdin/stderr/exit-code contract, and a generic command-string parser
+library. See [`docs/hook-contract.md`](docs/hook-contract.md).
 
 ```python
-from core_harness.hooks import HookRunner, parse_pretooluse_stdin, exit_with_block, lib_path
+from core_harness.hooks import HookRunner, parse_pretooluse_stdin, exit_ok
 
-event = parse_pretooluse_stdin()
-runner = HookRunner(rules=[...])
-decision = runner.evaluate(event)
-if decision.block:
-    exit_with_block(decision.reason)
+runner = HookRunner()                   # picks up CORE_HARNESS_BLOCK_PREFIX
+event = parse_pretooluse_stdin()        # equivalent to runner.parse_pretooluse_stdin()
+
+# Consumer-defined policy:
+if should_block(event):
+    runner.exit_with_block("git push --no-verify is not allowed here")
+exit_ok()
 ```
 
 ```bash
@@ -129,19 +162,24 @@ Exports: `HookRunner`, `parse_pretooluse_stdin`, `exit_with_block`, `exit_ok`,
 
 Per-pane append-only `Journal` for orchestrator audit events. The journal
 path is **consumer-injected** (core-harness does not pick a default location)
-and writes are concurrency-safe via file locking. A parallel bash helper is
-exposed via `lib_path()`.
+and writes are concurrency-safe via file locking (`fcntl.flock` on POSIX,
+`msvcrt.locking` on Windows). A bash companion library
+(`audit/lib/journal_append.sh`) ships alongside the package — see
+[`docs/journal-contract.md`](docs/journal-contract.md) for the wire format.
 
 ```python
 from core_harness.audit import Journal, append_event, iter_events
 
-journal = Journal(path=consumer_chosen_path)
-append_event(journal, event_type="dispatch", payload={...})
-for ev in iter_events(journal):
+journal = Journal(consumer_chosen_path)
+journal.append("dispatch", worker="w1", task_id="t-42")
+
+# Module-level convenience wrappers:
+append_event(consumer_chosen_path, "pr_merged", pr=123)
+for ev in iter_events(consumer_chosen_path, filter_event="dispatch"):
     ...
 ```
 
-Exports: `Journal`, `append_event`, `iter_events`, `lib_path`, `JournalError`,
+Exports: `Journal`, `append_event`, `iter_events`, `JournalError`,
 `JournalLockError`, `JournalReadError`.
 
 See [`docs/api-surface-v0.x.md`](docs/api-surface-v0.x.md) for the full
@@ -186,29 +224,25 @@ git tag -s vX.Y.Z -m "vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-**One-time setup before the first PyPI publish.** PyPI must have a
-Trusted Publisher entry registered for this repo. On
-[pypi.org/manage/project/core-harness/settings/publishing/](https://pypi.org/manage/project/core-harness/settings/publishing/),
-add a publisher with:
+**Trusted Publisher setup (one-time).** The Trusted Publisher entry on
+[pypi.org/manage/project/core-harness/settings/publishing/](https://pypi.org/manage/project/core-harness/settings/publishing/)
+is registered as:
 
 - Owner: `suisya-systems`
 - Repository: `core-harness`
 - Workflow: `release.yml`
 - Environment: `pypi`
 
-Until that entry exists, the publish step in `release.yml` will fail.
-The build and GitHub-Release jobs still succeed independently, so
-re-tagging after the entry is registered is enough to publish.
+v0.3.2 was the first release shipped through this pipeline. New tag
+pushes publish to PyPI automatically.
 
-If Trusted Publisher is not desired, the workflow has an API-token
+If Trusted Publisher is ever undesired, the workflow has an API-token
 fallback commented out — uncomment it, drop the `id-token: write`
 permission, and add `PYPI_API_TOKEN` to repo secrets.
 
-PyPI publishing remains deferred until the 1.0 cut; the workflow
-landing here is the skeleton, not a release.
-
 ## Related
 
+- [v0.3.2 release notes](https://github.com/suisya-systems/core-harness/releases/tag/v0.3.2) — first PyPI publish via Trusted Publisher
 - [v0.3.1 release notes](https://github.com/suisya-systems/core-harness/releases/tag/v0.3.1)
 - claude-org-ja Issue [#128](https://github.com/suisya-systems/claude-org-ja/issues/128) (closed) — extraction tracking
 - claude-org-ja PR [#196](https://github.com/suisya-systems/claude-org-ja/pull/196) — extraction design

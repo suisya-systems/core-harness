@@ -3,7 +3,7 @@
 Layer 1 of a consumer harness architecture. See README.md and
 docs/canonical-ownership.md.
 
-Public surface (0.3.1, see docs/api-surface-v0.x.md):
+Public surface (0.3.2, see docs/api-surface-v0.x.md):
 
 * ``core_harness.schema``    — framework JSON Schema + merge helper.
 * ``core_harness.validator`` — settings.local.json audit engine.
@@ -32,7 +32,7 @@ from core_harness.validator import (
     validate_settings,
 )
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 __all__ = [
     "__version__",

@@ -88,10 +88,10 @@ read_pretooluse_tool_name() {
 }
 
 # ---------------------------------------------------------------------------
-# Generic Bash command-string parser. Originally claude-org-ja's
-# `.hooks/lib/segment-split.sh` — moved here as the framework slice
+# Generic Bash command-string parser. Lives in the framework slice
 # because nothing in these helpers is consumer-specific (no role names,
-# no path patterns). Bug fixes propagate to all consumers.
+# no path patterns). Bug fixes propagate to all consumers that source
+# this library.
 # ---------------------------------------------------------------------------
 
 # split_segments

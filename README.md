@@ -1,5 +1,7 @@
 # core-harness
 
+[![tests](https://github.com/suisya-systems/core-harness/actions/workflows/tests.yml/badge.svg)](https://github.com/suisya-systems/core-harness/actions/workflows/tests.yml)
+
 Reusable safety primitives for Claude Code orchestrator harnesses (permission schema, hook framework, audit/journal).
 
 > **Status: pre-1.0, API not frozen.** Latest release: **v0.3.1**. Expect breaking changes between minor versions until 1.0. See [`docs/semver-policy.md`](docs/semver-policy.md).
@@ -154,6 +156,49 @@ Pre-1.0 semver (see [`docs/semver-policy.md`](docs/semver-policy.md)):
 2. Two consecutive minor releases shipped with no breaking changes.
 3. The public surface in `docs/api-surface-v0.x.md` marked stable (no
    remaining `experimental:` entries for items intended for 1.0).
+
+## Releasing
+
+Releases are tag-driven. Pushing a tag matching `v*` triggers
+[`.github/workflows/release.yml`](.github/workflows/release.yml),
+which:
+
+1. Builds an sdist and a wheel via `python -m build`.
+2. Publishes the artefacts to PyPI through a
+   [Trusted Publisher](https://docs.pypi.org/trusted-publishers/)
+   (OIDC — no API token is stored in the repo).
+3. Creates / updates a GitHub Release with the same tag and attaches
+   the built artefacts.
+
+Cutting a release:
+
+```bash
+# 1. Bump version in pyproject.toml and update CHANGELOG.md.
+# 2. Land both via PR.
+git tag -s vX.Y.Z -m "vX.Y.Z"
+git push origin vX.Y.Z
+```
+
+**One-time setup before the first PyPI publish.** PyPI must have a
+Trusted Publisher entry registered for this repo. On
+[pypi.org/manage/project/core-harness/settings/publishing/](https://pypi.org/manage/project/core-harness/settings/publishing/),
+add a publisher with:
+
+- Owner: `suisya-systems`
+- Repository: `core-harness`
+- Workflow: `release.yml`
+- Environment: `pypi`
+
+Until that entry exists, the publish step in `release.yml` will fail.
+The build and GitHub-Release jobs still succeed independently, so
+re-tagging after the entry is registered is enough to publish.
+
+If Trusted Publisher is not desired, the workflow has an API-token
+fallback commented out — uncomment it, drop the `id-token: write`
+permission, and add `PYPI_API_TOKEN` to repo secrets.
+
+PyPI publishing remains deferred until the 1.0 cut; the workflow
+landing here is the skeleton, not a release.
 
 ## Related
 

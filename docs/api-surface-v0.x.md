@@ -50,11 +50,10 @@
 ### Placeholders recognised by the generator
 
 - `{worker_dir}` — absolute path to the worker's worktree.
-- `{consumer_root}` — absolute path to the consuming repo (org-neutral
-  rename of the legacy `{claude_org_path}`).
-- Arbitrary names supplied via `extra_placeholders={...}` for legacy
-  alias support (e.g. consumers may pass `{claude_org_path}` pointing
-  at the same value as `consumer_root`).
+- `{consumer_root}` — absolute path to the consuming repo.
+- Arbitrary names supplied via `extra_placeholders={...}` for
+  consumer-specific alias support (consumers may register additional
+  placeholder names that point at the same value as `consumer_root`).
 
 ### `core_harness.hooks`
 
@@ -85,8 +84,8 @@ Sourced via the path returned by `lib_path()`. Public functions:
 
 - `CORE_HARNESS_BLOCK_PREFIX` — overrides the default `"Blocked: "`
   prefix in both the Python helper and the bash companion. Consumers
-  with a locale-specific contract (e.g. claude-org-ja's
-  `"ブロック: "`) export this at their org boundary so Layer 1 stays
+  with a locale-specific contract (for example a localized prefix such
+  as `"ブロック: "`) export this at their org boundary so Layer 1 stays
   unaware of consumer locale.
 
 ### `core_harness.audit`
@@ -126,6 +125,23 @@ See [`semver-policy.md`](semver-policy.md). In short:
 - ≥ 2 consecutive minor releases with no breaking changes.
 - All entries above marked `stable`; no remaining `placeholder` /
   `experimental` for items intended for 1.0.
+
+### 1.0 transition gates — current state
+
+- **CI matrix**: landed (`.github/workflows/tests.yml`) — pytest on
+  Linux / macOS / Windows × Python 3.10–3.12, plus bash hook + audit
+  tests on Linux / macOS.
+- **PyPI publishing pipeline**: skeleton landed
+  (`.github/workflows/release.yml`, OIDC / Trusted Publisher).
+  PyPI-side Trusted Publisher entry is not yet registered; first
+  `v*` tag will only publish once that one-time setup is done.
+- **Doc-comment neutralisation**: complete — Layer-1 source docstrings,
+  the bash hook library comment, and the canonical / hook / surface
+  contract docs no longer name a specific consuming repo or specific
+  role names. Architecture / "Related" links in `README.md` are kept
+  as deliberate project-history context.
+- **External-consumer count / consecutive-minor count**: still
+  pre-1.0 as of v0.3.1; tracked in `semver-policy.md`.
 
 ## Conventions used in this document
 

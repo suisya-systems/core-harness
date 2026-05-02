@@ -13,8 +13,8 @@ Layer 1 framework slice for PreToolUse hook wiring. Owns:
 The framework deliberately knows **nothing** about consumer-specific
 concepts: no role names, no path patterns, no consumer-locale string
 constants. The default block-message prefix is the neutral English
-``"Blocked: "``; consumers that need a different prefix (e.g.
-claude-org-ja's ``"ブロック: "`` contract) inject it via the
+``"Blocked: "``; consumers that need a different prefix (for example a
+localized contract such as ``"ブロック: "``) inject it via the
 ``CORE_HARNESS_BLOCK_PREFIX`` environment variable or
 ``HookRunner(block_prefix=...)`` argument. Layer 1 stays unaware of
 any specific consumer.
@@ -34,8 +34,8 @@ DEFAULT_BLOCK_PREFIX = "Blocked: "
 """Default block-message prefix.
 
 Layer-1-neutral English; consumers with org-specific localisation
-(e.g. claude-org-ja's legacy ``"ブロック: "`` contract) override this
-per-process via ``CORE_HARNESS_BLOCK_PREFIX`` or per-runner via
+(for example a legacy localized contract like ``"ブロック: "``) override
+this per-process via ``CORE_HARNESS_BLOCK_PREFIX`` or per-runner via
 ``HookRunner(block_prefix=...)``. The framework intentionally does not
 ship any consumer-specific string as a default.
 """

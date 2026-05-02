@@ -1,7 +1,8 @@
 # Canonical Ownership & One-Way Dependency
 
-`core-harness` is **Layer 1** of the claude-org architecture. It owns the
-generic framework primitives that every orchestrator harness needs:
+`core-harness` is **Layer 1** of the orchestrator-harness architecture.
+It owns the generic framework primitives that every orchestrator
+harness needs:
 
 - Permission schema type definitions (e.g. `forbidden_allow_*`,
   `required_hook_scripts`)
@@ -13,15 +14,15 @@ generic framework primitives that every orchestrator harness needs:
 ## Dependency direction (one-way)
 
 ```
-claude-org-ja  ─depends on─►  core-harness
-core-harness   ──does NOT──►  claude-org-ja
+consumer harness  ─depends on─►  core-harness
+core-harness      ──does NOT──►  any consumer
 ```
 
 `core-harness` **must not** import from, name, or otherwise know about any
 consuming layer. In particular, `core-harness` does not contain:
 
-- Role names (secretary, dispatcher, curator, worker, ...) — these are
-  org-specific concepts and stay in the consuming layer.
+- Role names — any specific role catalogue is an org-specific concept
+  and stays in the consuming layer.
 - Specific worker rosters, naming schemes, or routing rules.
 - Any string or constant scoped to a particular org's deployment.
 

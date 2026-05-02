@@ -8,6 +8,34 @@ and this project adheres to pre-1.0 semantic versioning as defined in
 
 ## [Unreleased]
 
+Internal — 1.0 transition prep (no public API changes).
+
+### Added
+
+- `.github/workflows/tests.yml` — CI matrix running pytest on
+  `{ubuntu-latest, macos-latest, windows-latest}` × `{3.10, 3.11, 3.12}`,
+  plus a separate job that runs `tests/test_hooks_bash.sh` and
+  `tests/test_audit_bash.sh` on Linux and macOS.
+- `.github/workflows/release.yml` — skeleton release pipeline. On
+  `v*` tag push: build sdist + wheel, publish to PyPI via
+  Trusted Publisher (OIDC, no token needed), and attach the artefacts
+  to a GitHub Release. The Trusted Publisher entry on PyPI is a
+  one-time manual setup; an API-token alternative is left commented in
+  the workflow for fallback.
+- `README.md` — new "Releasing" section documenting the tag-driven
+  flow and the PyPI Trusted Publisher prerequisite. Tests CI badge
+  added at the top.
+
+### Changed (internal — doc-comment neutralisation)
+
+- Removed lingering `claude-org-ja` / role-name references (`secretary`,
+  `dispatcher`, `curator`) from Layer-1 source docstrings, the bash
+  hook library comment, `docs/api-surface-v0.x.md`,
+  `docs/canonical-ownership.md`, and `docs/hook-contract.md`. Examples
+  that previously named a specific consumer now use generic
+  "consumer harness" / locale-illustration phrasing. No public API,
+  config key, or shipped string changed.
+
 ## [0.3.1] - 2026-05-02
 
 Patch release — Q4 purity finalization, security hardening, and API

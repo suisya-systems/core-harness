@@ -6,6 +6,13 @@ Reusable safety primitives for Claude Code orchestrator harnesses (permission sc
 
 > **Status: pre-1.0, API not frozen.** Latest release: **v0.3.1**. Expect breaking changes between minor versions until 1.0. See [`docs/semver-policy.md`](docs/semver-policy.md).
 
+> **Not an AI agent framework.** `core-harness` provides Claude Code-specific
+> governance primitives (permission schema, hook framework, audit/journal). It
+> does not implement agent runtime abstractions such as `agent` / `tool` /
+> `run` / `state` / `handoff` / `memory` / `trace` — those concerns belong in
+> higher layers (e.g. consumer harnesses like `claude-org-ja`) or in dedicated
+> agent frameworks (LangChain, AutoGen, CrewAI, OpenAI Agents SDK).
+
 ## Overview
 
 `core-harness` is **Layer 1** of the [claude-org] 4-layer architecture:

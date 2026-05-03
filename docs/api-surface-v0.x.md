@@ -1,4 +1,4 @@
-# Public API Surface — 0.x
+# Public API Surface — 0.3.2 (pre-1.0)
 
 > **Status: 0.3.2 published on PyPI.** This document tracks the evolving public
 > surface during the pre-1.0 phase. Items below are *experimental*
@@ -34,7 +34,7 @@
 | `validate_config(source_label, role, config, role_schema, global_schema, *, extra_allowed=None) -> list[Finding]` | experimental | Single-role audit. |
 | `validate_schema_integrity(schema) -> list[Finding]` | experimental | `required_hook_scripts` cross-check. |
 | `extract_role_blocks(md_text, roles) -> dict` | experimental | Pull JSON blocks from a docs projection. |
-| `check_worker_settings(schema, base_dir, *, include_worktrees=True) -> list[Finding]` | experimental | Drift-check `<base_dir>/*/.claude/settings.local.json`. When `include_worktrees=True` (default since 0.3.1), descends one level into `<base_dir>/.worktrees/<branch>/`. |
+| `check_worker_settings(schema, base_dir, *, include_worktrees=True) -> list[Finding]` | experimental | Drift-check `<base_dir>/*/.claude/settings.local.json`. When `include_worktrees=True` (default; introduced 0.3.1), descends one level into `<base_dir>/.worktrees/<branch>/`. |
 | `matches_worker_template(config, template, *, expected_worker_dir=None) -> bool` | experimental | Placeholder-consistent template match. |
 | `Finding(source, role, severity, message)` | experimental | Result entry. |
 | `ValidationResult(findings)` | experimental | Aggregated result with `.ok`. **0.3.1+: `bool(result)` raises `TypeError` to prevent ambiguity — use `result.ok` explicitly.** |

@@ -52,6 +52,10 @@ and this project adheres to pre-1.0 semantic versioning as defined in
   runs the tool; the contract now requires every failure to exit 2.
 - The Python example in `docs/hook-contract.md` no longer crashes on
   `"tool_input": null`.
+- The bash deny reason stays the first stderr line when the hook runs
+  with SIGPIPE ignored (as GitHub Actions runs its steps). jq can stop
+  reading an invalid payload early, and the `printf` that feeds it used
+  to print `write error: Broken pipe` before the `Blocked: ` line.
 
 ### Changed (behaviour)
 

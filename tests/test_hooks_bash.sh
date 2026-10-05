@@ -32,7 +32,7 @@ check() {
   else
     FAIL=$((FAIL+1))
     printf '  FAIL %s\n' "$name" >&2
-    ( "$@" ) || true
+    ( "$@" ) >&2 || true
   fi
 }
 
@@ -210,6 +210,17 @@ t_unwrap_sh_c() {
 TEST_TMP=$(mktemp -d "${TMPDIR:-/tmp}/core_harness_hooks_test.XXXXXX")
 REPO_SRC="$SCRIPT_DIR/../src"
 
+# show <string>: a one-line, bounded rendering of a test input for
+# failure messages (CI log viewers drop very long lines).
+show() {
+  local s=$1
+  if [[ ${#s} -gt 80 ]]; then
+    printf '%q...(%s chars)' "${s:0:80}" "${#s}"
+  else
+    printf '%q' "$s"
+  fi
+}
+
 # jrun <shell snippet> <payload> [env assignment...]
 #   Run the snippet in a fresh bash that has sourced the lib, with the
 #   payload on stdin. Sets JRC (exit code), JOUT (stdout), JERR (stderr).
@@ -263,7 +274,25 @@ t_invalid_payloads_block() {
     for f in "${ACCESSORS[@]}"; do
       jrun "$f" "$p"
       if [[ $JRC -ne 2 || "$JERR" != "Blocked: "* || -n "$JOUT" ]]; then
-        printf '    %s on %q: rc=%s out=%q err=%q\n' "$f" "$p" "$JRC" "$JOUT" "$JERR"
+        printf '    %s on %s: rc=%s out=%s err=%q\n' "$f" "$(show "$p")" "$JRC" "$(show "$JOUT")" "$JERR"
+        return 1
+      fi
+    done
+  done
+}
+
+t_invalid_payloads_block_sigpipe_ignored() {
+  # GitHub Actions starts steps with SIGPIPE ignored. jq stops reading a
+  # payload early (parse error, nesting-depth limit), so the printf that
+  # feeds it then gets EPIPE and, with SIGPIPE ignored, prints "write
+  # error: Broken pipe" - which must not displace the deny reason as the
+  # first stderr line.
+  local p f
+  for p in "${INVALID_PAYLOADS[@]}"; do
+    for f in "${ACCESSORS[@]}"; do
+      jrun "trap '' PIPE; $f" "$p"
+      if [[ $JRC -ne 2 || "$JERR" != "Blocked: "* || -n "$JOUT" ]]; then
+        printf '    %s on %s: rc=%s out=%s err=%q\n' "$f" "$(show "$p")" "$JRC" "$(show "$JOUT")" "$JERR"
         return 1
       fi
     done
@@ -380,7 +409,7 @@ t_template_hook_fail_closed() {
   local p rc ok="$PATH_OK:$PATH"
   for p in "${INVALID_PAYLOADS[@]}"; do
     rc=$(hook_rc "$ok" "$p")
-    if [[ $rc != 2/2 ]]; then printf '    template allowed %q (rc=%s)\n' "$p" "$rc"; return 1; fi
+    if [[ $rc != 2/2 ]]; then printf '    template allowed %s (rc=%s)\n' "$(show "$p")" "$rc"; return 1; fi
   done
   [[ $(hook_rc "$ok" '{"tool_name":"Bash","tool_input":{"command":"git push"}}') == 2/2 ]] || return 1
   [[ $(hook_rc "$ok" '{"tool_name":"Bash","tool_input":{"command":"ls"}}') == 0/0 ]] || return 1
@@ -411,7 +440,7 @@ t_python_bash_parity() {
     jrun 'read_pretooluse_input' "$p"
     sh_rc=$JRC
     if [[ $py_rc -ne $sh_rc || ( $sh_rc -ne 0 && $sh_rc -ne 2 ) ]]; then
-      printf '    parity mismatch on %q: python=%s bash=%s\n' "$p" "$py_rc" "$sh_rc"
+      printf '    parity mismatch on %s: python=%s bash=%s\n' "$(show "$p")" "$py_rc" "$sh_rc"
       return 1
     fi
   done
@@ -740,6 +769,9 @@ t_split_fuzz_vs_bash() {
 # ---------------------------------------------------------------------------
 
 echo "running core_harness_hooks.sh tests"
+# Tool versions, for reading CI failures.
+printf '  bash %s | %s | awk: %s\n' "$BASH_VERSION" "$(jq --version 2>&1)" \
+  "$(awk --version 2>/dev/null | head -n 1 || true)"
 check "block_with_message exits 2"                 t_block_exit_code
 check "block_with_message default prefix"          t_block_default_prefix
 check "block_with_message env prefix override"     t_block_env_prefix
@@ -763,6 +795,7 @@ check "unwrap_eval_and_bashc double-quote"         t_unwrap_eval_double_quote
 check "unwrap_eval_and_bashc bash -c single"       t_unwrap_bash_c_single_quote
 check "unwrap_eval_and_bashc sh -c"                t_unwrap_sh_c
 check "invalid payloads block in every accessor"   t_invalid_payloads_block
+check "invalid payloads block with SIGPIPE ignored" t_invalid_payloads_block_sigpipe_ignored
 check "valid payloads allow"                       t_valid_payloads_allow
 check "primed accessors share the cache"           t_primed_accessors_share_cache
 check "unprimed second accessor blocks"            t_unprimed_second_accessor_blocks

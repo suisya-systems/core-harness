@@ -93,10 +93,15 @@ read_pretooluse_input() {
   # jq 1.6/1.7 accept a raw 0x1F byte inside a string and treat a raw
   # 0x1E (RS) as a JSON-text-sequence separator; JSON forbids both (as
   # does Python) anywhere in the text, so deny them up front.
+  # jq may stop reading early (a parse error, the nesting-depth limit);
+  # when the hook runs with SIGPIPE ignored (as GitHub Actions does),
+  # printf then reports "write error: Broken pipe" on stderr, and that
+  # line would come before the deny reason. Silence it: jq's verdict
+  # alone decides.
   local verdict=invalid
   [[ "$__CORE_HARNESS_PRETOOLUSE_INPUT" == *$'\036'* \
     || "$__CORE_HARNESS_PRETOOLUSE_INPUT" == *$'\037'* ]] \
-    || verdict=$(printf '%s' "$__CORE_HARNESS_PRETOOLUSE_INPUT" | jq -s -r '
+    || verdict=$(printf '%s' "$__CORE_HARNESS_PRETOOLUSE_INPUT" 2>/dev/null | jq -s -r '
     if length == 0 then "empty"
     elif length > 1 then "multiple"
     elif (.[0] | type) != "object" then "not_object"
@@ -117,7 +122,7 @@ read_pretooluse_input() {
 # Internal: validate (reading stdin if needed), then print a jq field.
 __core_harness_read_field() {
   read_pretooluse_input
-  printf '%s' "$__CORE_HARNESS_PRETOOLUSE_INPUT" | jq -r "$1 // empty" \
+  printf '%s' "$__CORE_HARNESS_PRETOOLUSE_INPUT" 2>/dev/null | jq -r "$1 // empty" \
     || block_with_message "Failed to extract $1 from the PreToolUse payload."
 }
 

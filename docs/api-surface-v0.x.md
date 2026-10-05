@@ -1,13 +1,13 @@
-# Public API Surface — 0.3.2 (pre-1.0)
+# Public API Surface — 0.4.0 (pre-1.0)
 
-> **Status: 0.3.2 published on PyPI.** This document tracks the evolving public
+> **Status: 0.4.0 published on PyPI.** This document tracks the evolving public
 > surface during the pre-1.0 phase. Items below are *experimental*
 > unless explicitly marked `stable`; signatures may change between
 > minor versions per [`semver-policy.md`](semver-policy.md).
 
 ## Modules
 
-| Module | Status (0.3) | Notes |
+| Module | Status (0.4) | Notes |
 |---|---|---|
 | `core_harness.schema` | experimental | Framework JSON Schema + merge helper. Type-only — concrete role names / consumer regexes live in the org-extension schema (PR #196 §3). |
 | `core_harness.validator` | experimental | Audit engine for per-role `settings.local.json`. |
@@ -15,7 +15,7 @@
 | `core_harness.hooks` | experimental | PreToolUse hook contract (Step C, 0.2). Python helper + bash companion lib + `docs/hook-contract.md`. |
 | `core_harness.audit` | experimental | Journal API (Step D, 0.3). Python `Journal` class + bash companion lib + `docs/journal-contract.md`. |
 
-## Public symbols (0.3.2)
+## Public symbols (0.4.0)
 
 ### `core_harness.schema`
 
@@ -88,6 +88,10 @@ Sourced via the path returned by `lib_path()`. Public functions:
   with a locale-specific contract (for example a localized prefix such
   as `"ブロック: "`) export this at their org boundary so Layer 1 stays
   unaware of consumer locale.
+- `CORE_HARNESS_STRICT_PARSE` — set to `1` to make the bash parsers
+  (`split_segments`, `flatten_substitutions`, `collect_assignments`,
+  `unwrap_eval_and_bashc`) return 2 with a deny line on undetermined
+  input instead of 0. See `hook-contract.md` §3 "Fail-closed parsing".
 
 ### `core_harness.audit`
 
@@ -141,7 +145,7 @@ See [`semver-policy.md`](semver-policy.md). In short:
   role names. Architecture / "Related" links in `README.md` are kept
   as deliberate project-history context.
 - **External-consumer count / consecutive-minor count**: still
-  pre-1.0 as of v0.3.2; tracked in `semver-policy.md`.
+  pre-1.0 as of v0.4.0; tracked in `semver-policy.md`.
 
 ## Conventions used in this document
 

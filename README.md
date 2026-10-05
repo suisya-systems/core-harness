@@ -5,7 +5,7 @@
 
 Reusable safety primitives for Claude Code orchestrator harnesses (permission schema, hook framework, audit/journal).
 
-> **Status: pre-1.0, API not frozen.** Latest release: **v0.3.2** (published on PyPI). Expect breaking changes between minor versions until 1.0. See [`docs/semver-policy.md`](docs/semver-policy.md).
+> **Status: pre-1.0, API not frozen.** Latest release: **v0.4.0** (published on PyPI). Expect breaking changes between minor versions until 1.0. See [`docs/semver-policy.md`](docs/semver-policy.md).
 
 > **Not an AI agent framework.** `core-harness` provides Claude Code-specific
 > governance primitives (permission schema, hook framework, audit/journal). It
@@ -50,18 +50,18 @@ v0.3.2 is the first release shipped via the PyPI Trusted Publisher (OIDC)
 workflow. To pin a specific version:
 
 ```bash
-pip install core-harness==0.3.2
+pip install core-harness==0.4.0
 ```
 
 Installation directly from a git tag is also supported as a fallback:
 
 ```bash
-pip install git+https://github.com/suisya-systems/core-harness@v0.3.2
+pip install git+https://github.com/suisya-systems/core-harness@v0.4.0
 ```
 
 ## Usage
 
-The shipped public surface in v0.3.2:
+The shipped public surface in v0.4.0:
 
 ### `core_harness.schema`
 

@@ -769,6 +769,184 @@ t_split_fuzz_vs_bash() {
   [[ $accepted -ge 200 ]]
 }
 
+# ----- fail-closed parsing (#20) -------------------------------------------
+
+# strict_rc <helper> <input>: exit status of <helper> in strict mode.
+strict_rc() {
+  local rc=0
+  printf '%s\n' "$2" | CORE_HARNESS_STRICT_PARSE=1 "$1" >/dev/null 2>&1 || rc=$?
+  printf '%s' "$rc"
+}
+
+# Undetermined input: default mode keeps status 0 and over-emits; strict
+# mode returns 2 with a deny line.
+t_undetermined_default_status_zero() {
+  printf '%s\n' 'echo "a; b' | split_segments >/dev/null || return 1
+  printf '%s\n' 'echo $(a $(b))' | flatten_substitutions >/dev/null || return 1
+  printf '%s\n' 'A="x' | collect_assignments >/dev/null || return 1
+  printf '%s\n' 'eval "a\"b"' | unwrap_eval_and_bashc >/dev/null
+}
+
+t_undetermined_strict_blocks() {
+  local c
+  for c in 'echo "a; b' 'm $(case x in x) :;; esac)'; do
+    [[ $(strict_rc split_segments "$c") == 2 ]] || { echo "split: $c"; return 1; }
+  done
+  for c in 'echo $(a $(b))' 'echo $(a' 'echo `a' 'a\b' 'echo $(( (1)*2 ))'; do
+    [[ $(strict_rc flatten_substitutions "$c") == 2 ]] || { echo "flatten: $c"; return 1; }
+  done
+  for c in 'A="x' 'A=a\ b' "A=\$'x'" 'A="$(echo "x")"' 'A=$(x' 'A=`x'; do
+    [[ $(strict_rc collect_assignments "$c") == 2 ]] || { echo "collect: $c"; return 1; }
+  done
+  for c in 'eval "a\"b"' 'bash -c "a' "sh -c 'a'b" "bash -c \$'a'" 'eval a\ b' \
+    "eval \"eval 'eval x'\"" "bash -c 'a\\b'"; do
+    [[ $(strict_rc unwrap_eval_and_bashc "$c") == 2 ]] || { echo "unwrap: $c"; return 1; }
+  done
+}
+
+t_determined_strict_allows() {
+  local c
+  for c in 'a; b' 'echo "$(date)"; x'; do
+    [[ $(strict_rc split_segments "$c") == 0 ]] || { echo "split: $c"; return 1; }
+  done
+  for c in 'echo $(date) `id`' 'echo $((1+2))' 'echo $(echo $((1)))' 'echo plain'; do
+    [[ $(strict_rc flatten_substitutions "$c") == 0 ]] || { echo "flatten: $c"; return 1; }
+  done
+  for c in 'A=1 B=2 cmd' 'A=$(pwd) ls' 'A="$(pwd)" B='"'x y'" 'export A=`id`'; do
+    [[ $(strict_rc collect_assignments "$c") == 0 ]] || { echo "collect: $c"; return 1; }
+  done
+  for c in 'eval "a b"' "bash -c 'a; b'" 'sh -c "a" && eval x' 'bash -c a' 'eval $(x)'; do
+    [[ $(strict_rc unwrap_eval_and_bashc "$c") == 0 ]] || { echo "unwrap: $c"; return 1; }
+  done
+}
+
+t_strict_deny_line() {
+  local err
+  err=$(printf '%s\n' 'echo $(a' | CORE_HARNESS_BLOCK_PREFIX='X: ' CORE_HARNESS_STRICT_PARSE=1 \
+    flatten_substitutions 2>&1 >/dev/null) && return 1
+  [[ "$err" == 'X: flatten_substitutions could not determine how bash parses the command.' ]]
+}
+
+t_collect_dollar_paren_value_ends() {
+  # $( used to count two levels, so the value ran to the end of the line.
+  local got
+  got=$(printf '%s\n' 'A=$(pwd) B=2 cmd' | collect_assignments | tr '\n' '|')
+  [[ "$got" == 'A=$(pwd) pwd|B=2|' ]]
+}
+
+t_collect_undetermined_value() {
+  # Quotes are removed, not turned into spaces: "pu"sh is one word.
+  local got
+  got=$(printf '%s\n' 'A="pu"sh\ x B=1' | collect_assignments | tr '\n' '|')
+  [[ "$got" == 'A=push x B=1|B=1|' ]]
+}
+
+t_unwrap_left_to_right() {
+  # A "..." argument later on the line used to hide an earlier '...' one.
+  local got
+  got=$(printf '%s\n' "bash -c 'a' ; eval \"b\"" | unwrap_eval_and_bashc | tr '\n' '|')
+  [[ "$got" == 'a|b|' ]]
+}
+
+# Real-bash differential: each command below makes bash run `git push`
+# (checked with a stub git on PATH). A hook built like claude-org-ja's
+# (split, unwrap, collect + expand, flatten, then a regex) must deny it:
+# in default mode for every case marked 1, and in strict mode always.
+FC_STUB="$TEST_TMP/fc-stub"
+mkdir -p "$FC_STUB"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "$FC_LOG"\n' > "$FC_STUB/git"
+chmod +x "$FC_STUB/git"
+FC_LOG="$TEST_TMP/fc.log"
+
+# fc_runs_push <command>: 0 if real bash runs `git push` for <command>.
+fc_runs_push() {
+  : > "$FC_LOG"
+  ( cd "$ORACLE_CWD" && FC_LOG="$FC_LOG" PATH="$FC_STUB:/usr/bin:/bin" \
+      "$BASH" -c "$1" >/dev/null 2>&1 </dev/null ) || true
+  grep -q '^push' "$FC_LOG"
+}
+
+FC_RE='(^|[[:space:]])git[[:space:]]+push([[:space:]]|$)'
+# fc_hook <command>: exit 2 (deny) or 0, in the current parse mode.
+fc_hook() {
+  (
+    set -uo pipefail
+    segs=$(printf '%s' "$1" | split_segments) || exit 2
+    unw=$(printf '%s\n' "$segs" | unwrap_eval_and_bashc) || exit 2
+    all=$(printf '%s\n%s' "$segs" "$unw")
+    asg=$(printf '%s\n' "$all" | collect_assignments) || exit 2
+    A=()
+    while IFS= read -r x; do [[ -n "$x" ]] && A+=("$x"); done <<<"$asg"
+    while IFS= read -r line; do
+      e=$line
+      [[ ${#A[@]} -gt 0 ]] && e=$(printf '%s' "$line" | expand_known_vars "${A[@]}")
+      flat=$(printf '%s' "$e" | flatten_substitutions) || exit 2
+      printf '%s\n' "$flat" | grep -qE "$FC_RE" && exit 2
+    done <<<"$all"
+    exit 0
+  ) 2>/dev/null
+}
+
+# <default mode catches it> <command>
+FC_CASES=(
+  1 'bash -c "git \"push\" origin"'
+  1 "bash -c 'git pu'sh"
+  1 "bash -c 'git \\push'"
+  1 'bash -c "git pu\sh"'
+  1 "bash -c 'echo a'\";git push\""
+  1 'eval git\ push'
+  1 'eval "eval \"git push\""'
+  1 "eval \"eval 'eval git push'\""
+  1 'echo $(git push $(echo o))'
+  1 'echo $(echo "(";git push)'
+  1 'git pu\sh'
+  1 "bash -c \$(bash -c 'git push')"
+  1 "bash -c 'git push'\$(true)"
+  1 'export A=\" B=push; git $B'
+  1 'A="$(echo "x")" B=push; git $B'
+  1 'A="pu"sh\ ; git $A'
+  1 'echo $(git "pu"sh $(true))'
+  0 "bash -c \$'git\\x20push'"
+)
+t_unwrap_reveals_on_its_own() {
+  # Each case is also caught by flatten_substitutions in fc_hook; check
+  # that unwrap_eval_and_bashc's own output shows the command.
+  local c
+  for c in "bash -c \$(bash -c 'git push')" "bash -c 'git push'\$(true)"; do
+    printf '%s\n' "$c" | unwrap_eval_and_bashc | grep -qE "$FC_RE" \
+      || { printf '    hidden: %q\n' "$c"; return 1; }
+  done
+}
+
+t_fail_closed_vs_bash() {
+  local k want c rc
+  for ((k = 0; k < ${#FC_CASES[@]}; k += 2)); do
+    want=${FC_CASES[k]}; c=${FC_CASES[k+1]}
+    fc_runs_push "$c" || { printf '    bash does not run git push: %q\n' "$c"; return 1; }
+    rc=0; CORE_HARNESS_STRICT_PARSE=1 fc_hook "$c" || rc=$?
+    [[ $rc == 2 ]] || { printf '    strict mode allowed: %q\n' "$c"; return 1; }
+    [[ $want == 1 ]] || continue
+    rc=0; fc_hook "$c" || rc=$?
+    [[ $rc == 2 ]] || { printf '    default mode allowed: %q\n' "$c"; return 1; }
+  done
+}
+
+t_fail_closed_no_false_deny() {
+  # Ordinary commands that do not push stay allowed in both modes (the
+  # here-document commit message is undetermined line by line, so only
+  # default mode allows it).
+  local c rc
+  for c in 'git status && echo ok' 'git commit -m "$(date)"' "bash -c 'echo hi'" \
+    'eval "ls -l"' 'A=$(pwd) ls' 'echo $((1+2))'; do
+    ! fc_runs_push "$c" || return 1
+    rc=0; fc_hook "$c" || rc=$?; [[ $rc == 0 ]] || { printf '    default denied: %q\n' "$c"; return 1; }
+    rc=0; CORE_HARNESS_STRICT_PARSE=1 fc_hook "$c" || rc=$?
+    [[ $rc == 0 ]] || { printf '    strict denied: %q\n' "$c"; return 1; }
+  done
+  c=$'git commit -m "$(cat <<\'EOF\'\nfix: don\'t push; really\nEOF\n)"'
+  rc=0; fc_hook "$c" || rc=$?; [[ $rc == 0 ]]
+}
+
 # ---------------------------------------------------------------------------
 
 echo "running core_harness_hooks.sh tests"
@@ -827,6 +1005,16 @@ check "split_segments unbalanced fallback"         t_split_unbalanced_falls_back
 check "split_segments output format kept"          t_split_existing_format_kept
 check "split_segments heredoc commit message"      t_split_heredoc_commit_message_whole
 check_oracle "split_segments fuzz vs bash"         t_split_fuzz_vs_bash
+check "undetermined input: default status 0"       t_undetermined_default_status_zero
+check "undetermined input: strict mode blocks"     t_undetermined_strict_blocks
+check "determined input: strict mode allows"       t_determined_strict_allows
+check "strict mode deny line"                      t_strict_deny_line
+check "collect_assignments \$( value ends"          t_collect_dollar_paren_value_ends
+check "collect_assignments undetermined value"     t_collect_undetermined_value
+check "unwrap_eval_and_bashc left to right"        t_unwrap_left_to_right
+check "fail closed vs bash (git push hidden)"      t_fail_closed_vs_bash
+check "unwrap_eval_and_bashc reveals on its own"   t_unwrap_reveals_on_its_own
+check "fail closed: no false deny"                 t_fail_closed_no_false_deny
 
 echo
 echo "passed: $PASS"

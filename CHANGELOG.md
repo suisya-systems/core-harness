@@ -77,7 +77,8 @@ Visible to existing hook authors:
   not separators. Line continuations (backslash-newline outside single
   quotes) are removed from segment text. Inputs with a word-initial `#`
   or `<<` inside arithmetic, a `$((` / top-level `((` that bash re-parses
-  as nested subshells, a `case` / `esac` word inside `$( )` or `( )`, or
+  as nested subshells, a `case` / `esac` word inside `$( )` or `( )`, the
+  word `coproc`, here-documents pending in different nesting contexts, or
   a here-document delimiter written with `$'...'`, `$( )`, `${ }`, `$[ ]`
   or backticks, use the split-everything fallback.
 - `split_segments` also returns **fewer** segments where the old

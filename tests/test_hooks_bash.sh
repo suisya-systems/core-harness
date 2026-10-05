@@ -667,6 +667,9 @@ t_split_vs_bash_adversarial() {
   oc "M1 M2" $'m M1 <<${a b}\n${a b}\nm M2\n${a'
   # A here-document opened inside $( ) while an outer one is pending.
   oc "M1 M2 M3 M4" $'m M1 <<E $(cat <<F\nF\n)\nE\nm M2; m M3\nm M4 $(cat <<F\nF\n)'
+  # coproc [NAME] (( ... << ... )): arithmetic, not a here-document.
+  oc "M1 M2 M3" $'m M1; coproc ((x=1<<2))\nm M2; m M3\n2'
+  oc "M1 M2 M3" $'m M1; coproc C ((x=1<<2))\nm M2; m M3\n2'
   [[ $ORACLE_FAILS -eq 0 ]]
 }
 

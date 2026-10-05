@@ -194,7 +194,8 @@ read_pretooluse_tool_name() {
 #   re-reads as $( ( or ( (; # at the start of a word or << inside
 #   arithmetic, which is a comment / here-document in that reading; a
 #   case / esac word inside $( ) or ( ), whose pattern ) needs bash's
-#   reserved-word rules to tell apart from a closing paren; a here-document
+#   reserved-word rules to tell apart from a closing paren; the word
+#   coproc, whose compound command this parser does not track; a here-document
 #   delimiter written with $'...', $( ), ${ }, $[ ] or `...`; a ' or $'
 #   inside "${ ... }", literal in posix mode; a here-document opened
 #   inside $( ) or ( ) that closes before its body starts, whose body
@@ -240,6 +241,9 @@ split_segments() {
       # needs the reserved-word rules of bash (for case / time -p case ...):
       # inside any nested context, fall back instead of guessing.
       if (sp > 0 && (w == "case" || w == "esac")) lost = 1
+      # coproc [NAME] takes a full compound command (arithmetic, groups,
+      # loops) that this parser does not track after it: fall back.
+      if (w == "coproc") lost = 1
       # time -p / time -- keep the next word in command position.
       to = (tm && (w == "-p" || w == "--")) ? 1 : 0
       cp = (cpw && ((w in kw) || to)) ? 1 : 0

@@ -60,7 +60,7 @@
 | Symbol | Status | Purpose |
 |---|---|---|
 | `HookRunner(*, block_prefix=None, stderr=None, stdin=None)` | experimental | Helper for Python-implemented PreToolUse hooks. |
-| `HookRunner.parse_pretooluse_stdin() -> Mapping[str, Any]` | experimental | Read + JSON-decode hook payload from stdin. Empty stdin → `{}`; malformed JSON → block. |
+| `HookRunner.parse_pretooluse_stdin() -> Mapping[str, Any]` | experimental | Read + JSON-decode hook payload from stdin. Empty / malformed / non-object payloads and a non-object `tool_input` → block (see `hook-contract.md` §1.1). |
 | `HookRunner.exit_with_block(message: str)` | experimental | Write `{prefix}{message}` to stderr, exit 2. |
 | `HookRunner.exit_ok()` | experimental | Exit 0. |
 | `parse_pretooluse_stdin()` | experimental | Module-level convenience for `HookRunner().parse_pretooluse_stdin()`. |
@@ -74,7 +74,8 @@
 #### Bash companion (`core_harness_hooks.sh`)
 
 Sourced via the path returned by `lib_path()`. Public functions:
-`block_with_message`, `require_dependency`, `read_pretooluse_command`,
+`block_with_message`, `require_dependency`, `read_pretooluse_input`,
+`read_pretooluse_command`,
 `read_pretooluse_file_path`, `read_pretooluse_tool_name`,
 `split_segments`, `flatten_substitutions`, `collect_assignments`,
 `expand_known_vars`, `unwrap_eval_and_bashc`. See

@@ -27,13 +27,54 @@ scope" (exit 0). Hooks MUST NOT trust the field set to be exhaustive —
 new fields may be added by upstream tooling between minor versions of
 Claude Code.
 
+A payload the hook cannot inspect is not "out of scope". Both helpers
+(Python `parse_pretooluse_stdin()`, bash `read_pretooluse_input` and the
+`read_pretooluse_*` accessors) apply the same validity predicate and
+**deny** (exit 2, fail closed) when:
+
+- stdin is empty or whitespace-only;
+- stdin is not exactly one JSON value (parse error, truncated input,
+  trailing data, several concatenated values);
+- the top-level value is not an object (array, string, number, `null`,
+  boolean);
+- `tool_input` is present, not `null`, and not an object.
+
+An absent or `null` `tool_input`, and absent fields inside it, remain out
+of scope (the accessors print empty).
+
+Known divergences outside this predicate (in each case one side denies
+and the other inspects the payload; neither silently allows a payload it
+could not read):
+
+- Python rejects a leading UTF-8 BOM, which `jq` accepts.
+- Undecodable bytes: Python rejects them only when its stdin decodes
+  strictly (for example `PYTHONIOENCODING=utf-8`); under
+  `surrogateescape` (C/POSIX locale, UTF-8 mode) it accepts them, as
+  `jq` does.
+- Nesting depth: each parser denies JSON nested deeper than its limit
+  (`jq` 1.6: 256, `jq` 1.7: 10000, Python: its recursion limit, about
+  1000), so payloads between the limits get different verdicts.
+- Lone surrogate escapes (`"\ud800"`) are accepted by Python and
+  rejected by `jq` 1.6. Integers longer than Python's int-conversion
+  limit (4300 digits, on Pythons that have one) and the non-standard
+  number literals `jq` 1.6 accepts (leading zeros `01`, a leading `+` or
+  `.` as in `+1` / `.5`, a trailing `.` as in `1.`) are rejected by
+  Python and accepted by `jq`.
+- bash cannot hold NUL bytes in a variable, so NULs are dropped before
+  validation.
+
 ### 1.2 Output — exit code + stderr
 
 | Exit code | Meaning | stderr |
 |---|---|---|
 | `0` | Allow. The tool call proceeds. | Ignored. |
 | `2` | Deny. The tool call is blocked. | The first line is shown to the user as the deny reason. |
-| `1` (or any non-zero ≠ 2) | Hook crashed. Treated as deny by Claude Code, but the message format is undefined. Hooks SHOULD avoid this path. |
+| `1` (or any non-zero ≠ 2) | Non-blocking error. Claude Code shows stderr but **the tool call proceeds** (fail-open). | Shown to the user, not as a deny reason. |
+
+Because any exit code other than `2` lets the tool call through, a hook
+MUST map every failure path — crashes, missing dependencies, unreadable
+input, failed parsing — to exit `2`. The helpers do so; hook code that
+adds its own failure paths must as well.
 
 The deny-reason line follows the format:
 
@@ -68,7 +109,7 @@ runner = HookRunner()
 payload = runner.parse_pretooluse_stdin()
 if payload.get("tool_name") != "Bash":
     runner.exit_ok()
-command = payload.get("tool_input", {}).get("command", "")
+command = (payload.get("tool_input") or {}).get("command", "")
 if "--no-verify" in command:
     runner.exit_with_block("--no-verify は禁止です。")
 runner.exit_ok()
@@ -76,8 +117,12 @@ runner.exit_ok()
 
 ### Behaviour
 
-- `parse_pretooluse_stdin()`: empty stdin → returns `{}`. Malformed JSON
-  → `exit_with_block` (fail closed).
+- `parse_pretooluse_stdin()`: returns the payload dict when it passes the
+  §1.1 predicate; otherwise `exit_with_block` (fail closed). Empty or
+  whitespace-only stdin now blocks (it used to return `{}`), as does a
+  non-object `tool_input` (it used to pass through, and the usual
+  `payload.get("tool_input", {}).get(...)` then raised `AttributeError`:
+  exit 1, which Claude Code treats as fail-open).
 - `exit_with_block(message)`: writes `{prefix}{message}\n` to stderr,
   flushes, exits 2. Never returns.
 - `exit_ok()`: exits 0. Never returns.
@@ -94,13 +139,19 @@ Hooks source the library by resolving its path through Python:
 #!/usr/bin/env bash
 set -euo pipefail
 
-LIB_DIR=$(python3 -c 'import core_harness.hooks; print(core_harness.hooks.lib_path())')
+# Every failure path must exit 2 (section 1.2), including a missing library.
+LIB_DIR=$(python3 -c 'import core_harness.hooks; print(core_harness.hooks.lib_path())') \
+  || { echo "Blocked: core_harness is not importable." >&2; exit 2; }
 # shellcheck source=/dev/null
-source "$LIB_DIR/core_harness_hooks.sh"
+source "$LIB_DIR/core_harness_hooks.sh" \
+  || { echo "Blocked: core_harness_hooks.sh could not be loaded." >&2; exit 2; }
 
 require_dependency jq awk
 
-cmd=$(read_pretooluse_command)
+# Read and validate stdin once, at top level (blocks on a bad payload).
+read_pretooluse_input
+
+cmd=$(read_pretooluse_command) || exit 2
 [[ -z "$cmd" ]] && exit 0
 
 # … org-specific deny logic …
@@ -114,17 +165,25 @@ exit 0
 |---|---|
 | `block_with_message <reason>` | stderr prefix + exit 2. |
 | `require_dependency <bin> [<bin> …]` | Fail closed if any binary missing. |
-| `read_pretooluse_command` | Print `.tool_input.command` (or empty). |
-| `read_pretooluse_file_path` | Print `.tool_input.file_path` (or empty). |
-| `read_pretooluse_tool_name` | Print `.tool_name` (or empty). |
-| `split_segments` | Quote-aware command-string splitter. |
+| `read_pretooluse_input` | Read stdin once, validate it (§1.1), cache it; block on an invalid payload. |
+| `read_pretooluse_command` | Print `.tool_input.command` (or empty); block on an invalid payload. |
+| `read_pretooluse_file_path` | Print `.tool_input.file_path` (or empty); block on an invalid payload. |
+| `read_pretooluse_tool_name` | Print `.tool_name` (or empty); block on an invalid payload. |
+| `split_segments` | Split a command string at the top-level boundaries bash uses (`;` `&&` `\|\|` `\|` `\|&` `&` newline), honouring quotes, escapes, line continuations, `$( )`, `${ }`, backticks, comments and here-documents. |
 | `flatten_substitutions` | Reveal `$(…)` / `` `…` `` bodies. |
 | `collect_assignments` | Extract `VAR=value` chains. |
 | `expand_known_vars VAR=val …` | Substitute `$VAR` / `${VAR}`. |
 | `unwrap_eval_and_bashc` | Reveal `eval` / `bash -c` / `sh -c` argument bodies. |
 
-The `read_pretooluse_*` helpers cache stdin internally, so a single hook
-can call several without re-reading stdin.
+Call `read_pretooluse_input` at the top level before any
+`$(read_pretooluse_*)`. Each `$(...)` runs in a subshell: a block inside
+it only ends that subshell, and stdin read inside it is not cached for
+the next call. Reading at top level makes an invalid payload exit the
+hook itself and fills the cache that later `$(...)` calls inherit, so a
+hook can call several accessors. `|| exit 2` keeps the extraction
+fail-closed even without `set -e`. An accessor called without priming
+still validates, but a second un-primed call finds stdin already drained
+and blocks.
 
 ## 4. Contract guarantees vs. responsibilities
 

@@ -893,10 +893,22 @@ FC_CASES=(
   1 'echo $(git push $(echo o))'
   1 'echo $(echo "(";git push)'
   1 'git pu\sh'
+  1 "bash -c \$(bash -c 'git push')"
+  1 "bash -c 'git push'\$(true)"
   1 'export A=\" B=push; git $B'
   1 'A="$(echo "x")" B=push; git $B'
   0 "bash -c \$'git\\x20push'"
 )
+t_unwrap_reveals_on_its_own() {
+  # Each case is also caught by flatten_substitutions in fc_hook; check
+  # that unwrap_eval_and_bashc's own output shows the command.
+  local c
+  for c in "bash -c \$(bash -c 'git push')" "bash -c 'git push'\$(true)"; do
+    printf '%s\n' "$c" | unwrap_eval_and_bashc | grep -qE "$FC_RE" \
+      || { printf '    hidden: %q\n' "$c"; return 1; }
+  done
+}
+
 t_fail_closed_vs_bash() {
   local k want c rc
   for ((k = 0; k < ${#FC_CASES[@]}; k += 2)); do
@@ -991,6 +1003,7 @@ check "strict mode deny line"                      t_strict_deny_line
 check "collect_assignments \$( value ends"          t_collect_dollar_paren_value_ends
 check "unwrap_eval_and_bashc left to right"        t_unwrap_left_to_right
 check "fail closed vs bash (git push hidden)"      t_fail_closed_vs_bash
+check "unwrap_eval_and_bashc reveals on its own"   t_unwrap_reveals_on_its_own
 check "fail closed: no false deny"                 t_fail_closed_no_false_deny
 
 echo

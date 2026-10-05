@@ -715,8 +715,8 @@ collect_assignments() {
 #   it contains a backslash (inside "..." the inner shell may still read
 #   it as an escape, and \" ends the regex early), it is $'...' / $"...",
 #   or the word goes on after the closing quote ('git pu'sh). Then the
-#   rest of the line is printed with quotes and backslashes removed and a
-#   line break at every ; & | ( ) and backtick, so that each command bash
+#   rest of the line is printed with quotes and backslashes removed, a
+#   space before each $ and a line break at every ; & | ( ) and backtick, so that each command bash
 #   could run starts a line of its own. This reveals text only: escapes
 #   such as $'\x41' are not decoded, so callers that must not miss those
 #   use strict mode.
@@ -742,9 +742,11 @@ __core_harness_unwrap_pass() {
       if (length(body) > 0) print body
     }
     # The argument cannot be read: print the rest of the line, split at
-    # every separator character, with quotes and backslashes removed.
+    # every separator character, with quotes and backslashes removed and
+    # a space before each $ (so 'a'$(b) does not glue a$ together).
     function give_up(arg) {
       gsub(/[\\\042\047]/, "", arg)
+      gsub(/\$/, " $", arg)
       gsub(/[;&|()`]/, "\n", arg)
       emit_body(arg)
       lost = 1
@@ -769,7 +771,7 @@ __core_harness_unwrap_pass() {
         word = substr(arg, 1, RLENGTH)
         if (word ~ /[\\\042\047]/) { give_up(arg); break }
         if (head ~ /eval/) emit_body(word)
-        line = substr(arg, RLENGTH + 1)
+        # Keep searching inside the word: bash -c $(bash -c '...').
       }
     }
     END { exit (lost ? 3 : 0) }

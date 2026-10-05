@@ -115,7 +115,8 @@ Visible to existing hook authors:
   as spaces and backslashes removed; `collect_assignments` gives the
   variable the rest of the line and also prints every later `NAME=` on
   it; `unwrap_eval_and_bashc` prints the rest of the line, quotes and
-  backslashes removed, one line per separator-delimited piece (before,
+  backslashes removed, a space before each `$`, one line per
+  separator-delimited piece (before,
   an unclosed quote printed nothing), and also prints third-level bodies.
 - `collect_assignments` no longer lets a `$( ... )` value run to the end
   of the line (`$(` was counted as two levels), so `A=$(pwd) B=2` now

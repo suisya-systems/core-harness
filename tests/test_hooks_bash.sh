@@ -834,6 +834,13 @@ t_collect_dollar_paren_value_ends() {
   [[ "$got" == 'A=$(pwd) pwd|B=2|' ]]
 }
 
+t_collect_undetermined_value() {
+  # Quotes are removed, not turned into spaces: "pu"sh is one word.
+  local got
+  got=$(printf '%s\n' 'A="pu"sh\ x B=1' | collect_assignments | tr '\n' '|')
+  [[ "$got" == 'A=push x B=1|B=1|' ]]
+}
+
 t_unwrap_left_to_right() {
   # A "..." argument later on the line used to hide an earlier '...' one.
   local got
@@ -897,6 +904,8 @@ FC_CASES=(
   1 "bash -c 'git push'\$(true)"
   1 'export A=\" B=push; git $B'
   1 'A="$(echo "x")" B=push; git $B'
+  1 'A="pu"sh\ ; git $A'
+  1 'echo $(git "pu"sh $(true))'
   0 "bash -c \$'git\\x20push'"
 )
 t_unwrap_reveals_on_its_own() {
@@ -1001,6 +1010,7 @@ check "undetermined input: strict mode blocks"     t_undetermined_strict_blocks
 check "determined input: strict mode allows"       t_determined_strict_allows
 check "strict mode deny line"                      t_strict_deny_line
 check "collect_assignments \$( value ends"          t_collect_dollar_paren_value_ends
+check "collect_assignments undetermined value"     t_collect_undetermined_value
 check "unwrap_eval_and_bashc left to right"        t_unwrap_left_to_right
 check "fail closed vs bash (git push hidden)"      t_fail_closed_vs_bash
 check "unwrap_eval_and_bashc reveals on its own"   t_unwrap_reveals_on_its_own

@@ -558,7 +558,7 @@ split_segments() {
 #   a $( or ` is left over once those bodies are taken (nested or
 #   unclosed substitution, a parenthesis inside a body, a $( inside
 #   quotes). For such a line the output also gets a copy of the line with
-#   $ ( ) ` ; & | turned into spaces and backslashes removed, so every word of
+#   $ ( ) ` ; & | turned into spaces and quotes and backslashes removed, so every word of
 #   every substitution, at any depth, is visible. Input is read line by
 #   line, so a substitution that spans lines (the usual here-document
 #   commit message) is undetermined too.
@@ -587,7 +587,7 @@ flatten_substitutions() {
       if (undet) {
         d = $0
         gsub(/[$()`;&|]/, " ", d)
-        gsub(/\\/, "", d)
+        gsub(/[\\\042\047]/, "", d)
         out = out " " d
         lost = 1
       }
@@ -611,9 +611,9 @@ flatten_substitutions() {
 #   are not followed), a " inside "$( ... )" (quotes nested in a
 #   substitution are not tracked), or a quote, backtick or $( still open at
 #   the end of the line (values are read line by line). Then the variable
-#   gets the whole rest of the line, backslashes removed, as its value, and
-#   every later NAME= on the line is printed the same way, since where the
-#   value ends is unknown.
+#   gets the whole rest of the line, quotes and backslashes removed (as
+#   bash removes them), as its value, and every later NAME= on the line is
+#   printed the same way, since where the value ends is unknown.
 collect_assignments() {
   local rc=0
   awk '
@@ -686,7 +686,7 @@ collect_assignments() {
         if (undet) {
           lost = 1
           r = rest
-          gsub(/\\/, "", r)
+          gsub(/[\\\042\047]/, "", r)
           emit_assign(var, r)
           while (match(r, /[ \t;&|(`\047\042][A-Za-z_][A-Za-z0-9_]*=/)) {
             r = substr(r, RSTART + 1)

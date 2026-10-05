@@ -112,9 +112,9 @@ Visible to existing hook authors:
   otherwise verbatim) is unchanged.
 - For undetermined input (#20) the parsers print **more**:
   `flatten_substitutions` appends a copy of the line with `$ ( ) ` ; & |`
-  as spaces and backslashes removed; `collect_assignments` gives the
-  variable the rest of the line and also prints every later `NAME=` on
-  it; `unwrap_eval_and_bashc` prints the rest of the line, quotes and
+  as spaces and quotes and backslashes removed; `collect_assignments`
+  gives the variable the rest of the line (quotes and backslashes
+  removed) and also prints every later `NAME=` on it; `unwrap_eval_and_bashc` prints the rest of the line, quotes and
   backslashes removed, a space before each `$`, one line per
   separator-delimited piece (before,
   an unclosed quote printed nothing), and also prints third-level bodies.

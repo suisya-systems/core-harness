@@ -8,6 +8,101 @@ and this project adheres to pre-1.0 semantic versioning as defined in
 
 ## [Unreleased]
 
+### Security
+
+- **bash payload helpers fail closed (#17).** `read_pretooluse_command`,
+  `read_pretooluse_file_path` and `read_pretooluse_tool_name` ignored
+  `jq`'s exit status, so malformed, truncated or non-object stdin came
+  back as an empty string, which the documented hook template treats as
+  "out of scope" and allows. They now validate the payload and block
+  (exit 2) unless stdin holds exactly one JSON object whose `tool_input`,
+  when present and non-null, is an object (a raw 0x1F byte, which `jq`
+  accepts inside strings, and a raw 0x1E byte, which `jq` 1.6 takes for
+  a JSON-text-sequence separator, also block). Python
+  `parse_pretooluse_stdin()` applies the same predicate (see
+  `docs/hook-contract.md` §1.1).
+- **`split_segments` finds the boundaries bash finds (#18).** The old
+  splitter did not track backslash escapes, so `echo \"; git push`
+  became one segment and hid `git push` from per-segment checks. It is
+  rewritten as a context-stack parser that follows bash's rules for
+  escapes outside quotes, in `"..."`, `'...'`, `$'...'` and backticks,
+  line continuations, nested `$( )` / `$(( ))` / `${ }` / `$[ ]`,
+  comments and here-documents (a `case` statement inside `$( )` uses the
+  fallback below). It now
+  also splits at `&` (background) and `|&`. Inputs it cannot parse to a
+  balanced state fall back to splitting at every `; & |` and newline.
+
+### Added
+
+- bash `read_pretooluse_input`: reads stdin once at top level, validates
+  it, and caches it for the accessors. Hooks should call it before any
+  `$(read_pretooluse_*)`.
+
+### Fixed
+
+- The bash payload cache never worked across `$(read_pretooluse_*)`
+  calls (each runs in a subshell), so a second accessor read an already
+  drained stdin and returned empty. Calling `read_pretooluse_input` first
+  now makes several accessors work; see the migration note below.
+- Python `parse_pretooluse_stdin()` no longer escapes with exit 1
+  (which Claude Code treats as a non-blocking error, i.e. fail-open) on
+  undecodable stdin or deeply nested JSON (`RecursionError`); it blocks.
+- `docs/hook-contract.md` §1.2 said exit codes other than 0/2 are
+  treated as deny. Claude Code treats them as a non-blocking error and
+  runs the tool; the contract now requires every failure to exit 2.
+- The Python example in `docs/hook-contract.md` no longer crashes on
+  `"tool_input": null`.
+- The bash deny reason stays the first stderr line when the hook runs
+  with SIGPIPE ignored (as GitHub Actions runs its steps). jq can stop
+  reading an invalid payload early, and the `printf` that feeds it used
+  to print `write error: Broken pipe` before the `Blocked: ` line.
+
+### Changed (behaviour)
+
+Visible to existing hook authors:
+
+- Empty or whitespace-only stdin now **blocks** in both helpers. Python
+  `parse_pretooluse_stdin()` used to return `{}`; the bash accessors used
+  to print empty. Claude Code always sends a JSON object, so an empty
+  payload means the hook cannot see what it is guarding.
+- A non-object `tool_input` (string, array, number, boolean) now blocks
+  in both helpers.
+- Payloads with trailing data or several concatenated JSON values now
+  block in bash (Python already rejected them).
+- A second `$(read_pretooluse_*)` call in a hook that did not call
+  `read_pretooluse_input` first now **blocks** instead of returning empty.
+- `split_segments` returns **more** segments for some inputs: at `&`
+  (background), `|&`, after a backslash-escaped quote, and after a
+  comment line containing a quote. `>&`, `<&`, `&>` and `&>>` are still
+  not separators. Line continuations (backslash-newline outside single
+  quotes) are removed from segment text. Inputs with a word-initial `#`
+  or `<<` inside arithmetic, a `$((` / top-level `((` that bash re-parses
+  as nested subshells, a `case` / `esac` word inside `$( )` or `( )`, the
+  word `coproc`, here-documents pending in different nesting contexts, or
+  a here-document delimiter written with `$'...'`, `$( )`, `${ }`, `$[ ]`
+  or backticks, use the split-everything fallback.
+- `split_segments` also returns **fewer** segments where the old
+  splitter cut inside a single command (bash does not split there):
+  - text after a word-initial `#` is part of the comment, so
+    `echo hi # ; git push` is one segment (bash never runs `git push`);
+  - separators inside `${ }`, `$[ ]` and `a[...]=` subscripts
+    (`echo ${x:-a;b}`, `a[1;2]=3`) no longer split;
+  - **here-document bodies** stay in the segment of the command that
+    owns them instead of one segment per body line. A hook that relied on
+    body lines showing up as their own segments (for example to catch
+    commands fed to an interpreter with `bash <<EOF` / `sh -s <<EOF`)
+    must now look inside the segment text.
+  Segment output format (one segment per line, separators dropped, text
+  otherwise verbatim) is unchanged.
+
+Migration: add `read_pretooluse_input` at the top level of the hook,
+before the first accessor, and write `cmd=$(read_pretooluse_command) ||
+exit 2` (template in `docs/hook-contract.md` §3).
+
+claude-org-ja's `.hooks/*.sh` parse stdin themselves and do not call
+`read_pretooluse_*`; they use `split_segments` and the other parsers, so
+they are affected only by the `split_segments` change.
+
 ## [0.3.2] - 2026-05-02
 
 Maintenance release — first publish via PyPI Trusted Publisher (OIDC).

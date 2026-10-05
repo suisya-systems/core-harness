@@ -64,11 +64,65 @@ class ParseStdinTests(unittest.TestCase):
             stderr=stderr or io.StringIO(),
         )
 
-    def test_empty_stdin_returns_empty_dict(self) -> None:
-        self.assertEqual(self._runner("").parse_pretooluse_stdin(), {})
+    def _assert_blocks(self, raw: str) -> str:
+        stderr = io.StringIO()
+        runner = self._runner(raw, stderr=stderr)
+        with self.assertRaises(SystemExit) as cm:
+            runner.parse_pretooluse_stdin()
+        self.assertEqual(cm.exception.code, BLOCK_EXIT_CODE, repr(raw))
+        self.assertTrue(stderr.getvalue().startswith(DEFAULT_BLOCK_PREFIX))
+        return stderr.getvalue()
 
-    def test_whitespace_only_returns_empty_dict(self) -> None:
-        self.assertEqual(self._runner("   \n\t").parse_pretooluse_stdin(), {})
+    def test_empty_stdin_blocks(self) -> None:
+        # Claude Code always sends a JSON object; an empty payload means
+        # the hook cannot see what it guards, so it fails closed (#17).
+        self.assertIn("empty", self._assert_blocks(""))
+
+    def test_whitespace_only_blocks(self) -> None:
+        self._assert_blocks("   \n\t")
+
+    def test_concatenated_objects_block(self) -> None:
+        self._assert_blocks("{}{}")
+        self._assert_blocks('{"tool_name":"Bash"}\n{"tool_name":"Bash"}')
+
+    def test_deeply_nested_json_blocks(self) -> None:
+        # json.loads raises RecursionError here; uncaught it exits 1,
+        # which Claude Code treats as non-blocking (fail open).
+        depth = 100000
+        self._assert_blocks(
+            '{"tool_input":{"a":' + "[" * depth + "]" * depth + "}}"
+        )
+
+    def test_trailing_garbage_blocks(self) -> None:
+        self._assert_blocks("{}x")
+
+    def test_truncated_json_blocks(self) -> None:
+        self._assert_blocks('{"tool_input":')
+
+    def test_scalar_payloads_block(self) -> None:
+        for raw in ('"str"', "42", "null", "true", "-n", "-e"):
+            with self.subTest(raw=raw):
+                self._assert_blocks(raw)
+
+    def test_non_object_tool_input_blocks(self) -> None:
+        for raw in (
+            '{"tool_input":"git push"}',
+            '{"tool_input":["git","push"]}',
+            '{"tool_input":1}',
+            '{"tool_input":false}',
+        ):
+            with self.subTest(raw=raw):
+                self.assertIn("tool_input", self._assert_blocks(raw))
+
+    def test_missing_or_null_tool_input_ok(self) -> None:
+        for payload in (
+            {"tool_name": "Bash"},
+            {"tool_name": "Bash", "tool_input": None},
+            {},
+        ):
+            with self.subTest(payload=payload):
+                result = self._runner(json.dumps(payload)).parse_pretooluse_stdin()
+                self.assertEqual(result, payload)
 
     def test_round_trip_payload(self) -> None:
         payload = {
@@ -212,6 +266,26 @@ class ModuleLevelHelpersTests(unittest.TestCase):
         self.assertEqual(result.returncode, BLOCK_EXIT_CODE)
         self.assertIn("boom", result.stderr)
         self.assertIn(DEFAULT_BLOCK_PREFIX, result.stderr)
+
+    def test_module_parse_undecodable_stdin_blocks(self) -> None:
+        # A decode error used to escape as a traceback (exit 1), which
+        # Claude Code treats as a non-blocking error: fail-open.
+        result = subprocess.run(
+            [sys.executable, "-c",
+             "from core_harness.hooks import parse_pretooluse_stdin; parse_pretooluse_stdin()"],
+            input=b'{"tool_input":{"command":"\xff"}}',
+            capture_output=True,
+            timeout=15,
+            check=False,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        )
+        self.assertEqual(result.returncode, BLOCK_EXIT_CODE)
+
+    def test_module_parse_empty_stdin_blocks(self) -> None:
+        result = self._run(
+            "from core_harness.hooks import parse_pretooluse_stdin; parse_pretooluse_stdin()"
+        )
+        self.assertEqual(result.returncode, BLOCK_EXIT_CODE)
 
     def test_module_parse_then_exit(self) -> None:
         code = (

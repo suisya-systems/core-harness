@@ -95,25 +95,39 @@ class HookRunner:
     def parse_pretooluse_stdin(self) -> Mapping[str, Any]:
         """Read the PreToolUse JSON payload from stdin.
 
-        Empty stdin is treated as an empty payload (``{}``), matching
-        the de-facto contract where hooks receive ``{}`` for tools they
-        don't care about and exit 0. Malformed JSON triggers
-        :meth:`exit_with_block` so the framework fails closed rather
-        than silently allowing through a tool call whose payload it
-        couldn't inspect.
+        Fails closed (:meth:`exit_with_block`) unless stdin holds exactly
+        one JSON object whose ``tool_input``, when present and not
+        ``null``, is itself an object. Empty or whitespace-only stdin,
+        unreadable or malformed input, trailing data, non-object payloads
+        and a non-object ``tool_input`` are all denied: Claude Code always
+        sends a JSON object, so anything else means the hook cannot see
+        what it is guarding. An absent or ``null`` ``tool_input`` is
+        accepted (absent fields are out of scope). The bash helper
+        ``read_pretooluse_input`` applies the same predicate.
         """
-        raw = self._stdin.read()
+        try:
+            raw = self._stdin.read()
+        except (OSError, ValueError) as exc:
+            # ValueError covers UnicodeDecodeError on undecodable input.
+            self.exit_with_block(f"Failed to read PreToolUse payload: {exc}")
         if not raw or not raw.strip():
-            return {}
+            self.exit_with_block("PreToolUse payload is empty.")
         try:
             payload = json.loads(raw)
-        except (ValueError, TypeError) as exc:
+        except (ValueError, TypeError, RecursionError) as exc:
+            # RecursionError: deeply nested JSON. Uncaught it would exit 1,
+            # which Claude Code treats as non-blocking (fail open).
             self.exit_with_block(
                 f"Failed to parse PreToolUse JSON: {exc}"
             )
         if not isinstance(payload, dict):
             self.exit_with_block(
                 "PreToolUse payload is not a JSON object"
+            )
+        tool_input = payload.get("tool_input")
+        if tool_input is not None and not isinstance(tool_input, dict):
+            self.exit_with_block(
+                "PreToolUse payload field tool_input is not a JSON object"
             )
         return payload
 

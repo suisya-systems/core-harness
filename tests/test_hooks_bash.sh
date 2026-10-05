@@ -636,6 +636,8 @@ t_split_vs_bash_adversarial() {
   oc "M1 M2" $'m M1 <<E$(x)\nE$(x)\nm M2\nE$'
   oc "M1 M2" $'m M1 <<`a b`\n`a b`\nm M2\n`a'
   oc "M1 M2" $'m M1 <<${a b}\n${a b}\nm M2\n${a'
+  # A here-document opened inside $( ) while an outer one is pending.
+  oc "M1 M2 M3 M4" $'m M1 <<E $(cat <<F\nF\n)\nE\nm M2; m M3\nm M4 $(cat <<F\nF\n)'
   [[ $ORACLE_FAILS -eq 0 ]]
 }
 

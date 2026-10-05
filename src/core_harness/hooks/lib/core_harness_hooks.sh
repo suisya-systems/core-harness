@@ -286,6 +286,10 @@ split_segments() {
           d = d ch; j++
         }
       }
+      # A here-document opened in a different nesting context while
+      # another one is still pending: bash reads the bodies of each
+      # context separately, this single queue cannot, so give up.
+      if (hq > 0 && hdp[hq] != sp) lost = 1
       hd[++hq] = d; hs[hq] = strip; hu[hq] = !quoted; hdp[hq] = sp
     }
     # Copy pending here-document bodies (they start after the newline at

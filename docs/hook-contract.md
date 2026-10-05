@@ -170,10 +170,15 @@ exit 0
 | `read_pretooluse_file_path` | Print `.tool_input.file_path` (or empty); block on an invalid payload. |
 | `read_pretooluse_tool_name` | Print `.tool_name` (or empty); block on an invalid payload. |
 | `split_segments` | Split a command string at the top-level boundaries bash uses (`;` `&&` `\|\|` `\|` `\|&` `&` newline), honouring quotes, escapes, line continuations, `$( )`, `${ }`, backticks, comments and here-documents. |
-| `flatten_substitutions` | Reveal `$(…)` / `` `…` `` bodies. |
+| `flatten_substitutions` | Reveal `$(…)` / `` `…` `` bodies (one level; deeper nesting is undetermined). |
 | `collect_assignments` | Extract `VAR=value` chains. |
 | `expand_known_vars VAR=val …` | Substitute `$VAR` / `${VAR}`. |
 | `unwrap_eval_and_bashc` | Reveal `eval` / `bash -c` / `sh -c` argument bodies. |
+
+The four parsers (`split_segments`, `flatten_substitutions`,
+`collect_assignments`, `unwrap_eval_and_bashc`) follow the fail-closed
+parsing contract below. `expand_known_vars` substitutes literally and has
+no undetermined state.
 
 Call `read_pretooluse_input` at the top level before any
 `$(read_pretooluse_*)`. Each `$(...)` runs in a subshell: a block inside
@@ -184,6 +189,81 @@ hook can call several accessors. `|| exit 2` keeps the extraction
 fail-closed even without `set -e`. An accessor called without priming
 still validates, but a second un-primed call finds stdin already drained
 and blocks.
+
+### Where the parsers sit: defence in depth
+
+The parsers are a second layer, not the boundary:
+
+1. **Hard allow / deny belongs to Claude Code's permission system**
+   (`permissions.deny` / `ask` / `allow`). It catches commands as Claude
+   usually writes them, and a hook decision does not bypass it.
+2. **The security boundary belongs to the sandbox** (filesystem,
+   network, credentials). Claude Code's permissions documentation says a
+   Bash rule "isn't a security boundary around the program": it does not
+   match `/bin/rm`, `bash -c '…'` or `git -C . push`, and no string
+   parser can enumerate every way to spell a command.
+3. **Hooks built on these parsers are the second layer.** They look at
+   spellings the first layer misses (options in front of a subcommand,
+   `eval` / `bash -c` arguments, variables, `VAR=value` prefixes) and
+   **fail closed**: input they cannot determine leans towards deny, never
+   towards allow.
+
+The parsers do not try to track every bash rule, and precision is not a
+goal. When one of them cannot tell how bash reads its input, it says so
+(see "Fail-closed parsing" below) rather than guessing.
+
+#### Do not put `if` on enforcement hooks
+
+A hook entry's `if` field (permission-rule syntax, for example
+`"if": "Bash(git *)"`) skips the hook when the command does not match.
+The [hooks reference](https://code.claude.com/docs/en/hooks) calls the
+filter best-effort: "When Claude Code can't determine which commands the
+Bash input runs, it runs your hook regardless of the pattern. Because
+the `if` filter is best-effort, use the permission system rather than a
+hook to enforce a hard allow or deny."
+
+An enforcement hook exists to catch what the permission rules miss. The
+`if` filter uses the same rule syntax, so a spelling that slips past a
+deny rule (`/usr/bin/git ...`, `bash -c '...'`) can plausibly slip past
+`if` too and skip the hook, leaving the second layer with the same hole
+as the first. (This is inferred from the documented rule behaviour, not
+a tested guarantee.) Use `if` only on best-effort hooks, or to keep an
+expensive hook from starting; never on a hook that must deny.
+
+### Fail-closed parsing
+
+A parser meets **undetermined** input when it cannot tell how bash reads
+it: an unbalanced quote, an escape it does not follow, nesting deeper
+than it reads. For such input it:
+
+- **prints its normal output plus an over-approximation** (more segments
+  or more text, never less), so a hook that pattern-matches the output
+  sees every word bash could run; and
+- **returns 0 by default**, so existing callers keep their exit status;
+  with `CORE_HARNESS_STRICT_PARSE=1` in the environment it instead
+  prints a deny line (`{block_prefix}<helper> could not determine how
+  bash parses the command.`) on stderr and **returns 2**.
+
+Strict mode is for hooks that want "undetermined" to mean "deny". Read
+the status where it is not lost: from a command substitution
+(`segs=$(printf '%s' "$cmd" | split_segments) || exit 2`, or under
+`set -e -o pipefail`); the status of a `< <(...)` process substitution
+is discarded. Strict mode is also the only way to deny input whose
+meaning the over-approximation cannot show, such as
+`bash -c $'\x6c\x73'` (ANSI-C escapes are not decoded). Expect it to
+deny more: for `flatten_substitutions` every line with a backslash or an
+unclosed `$(` is undetermined, including the first line of the usual
+here-document commit message (`git commit -m "$(cat <<'EOF'`).
+
+| Helper | Undetermined when | Over-approximation |
+|---|---|---|
+| `split_segments` | The input does not parse to a balanced state, or uses a construct bash re-parses differently (listed in the function comment). | Split at every `;` `&` `\|` and newline character, ignoring quotes (unchanged). |
+| `flatten_substitutions` | Frozen at one level. A line contains a backslash, or a `$(` / `` ` `` is left once the innermost `$( )` bodies (no parenthesis inside) and `` `…` `` bodies are taken: nested or unclosed substitution, a parenthesis inside a body, `$(` inside quotes. `$(( ))` without inner parentheses is skipped. | A copy of the line with `$` `(` `)` `` ` `` `;` `&` `\|` turned into spaces and backslashes removed is appended. |
+| `collect_assignments` | A value contains a backslash or `$'`, a `"` inside `"$( … )"`, or a quote, backtick or `$(` still open at the end of the line. | The variable gets the rest of the line (backslashes removed) as its value, and every later `NAME=` on the line is printed the same way. |
+| `unwrap_eval_and_bashc` | The argument's quote is not closed on the line, the argument contains a backslash, is `$'…'` / `$"…"`, or the word goes on after the closing quote (`'a b'c`); or arguments nest three levels deep. | The rest of the line with quotes and backslashes removed, broken into lines at every `;` `&` `\|` `(` `)` and backtick. Third-level bodies are printed too. |
+
+Every parser except `split_segments` reads one line at a time, so a
+quote or substitution that spans lines is undetermined for it.
 
 ## 4. Contract guarantees vs. responsibilities
 

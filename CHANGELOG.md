@@ -31,8 +31,24 @@ and this project adheres to pre-1.0 semantic versioning as defined in
   fallback below). It now
   also splits at `&` (background) and `|&`. Inputs it cannot parse to a
   balanced state fall back to splitting at every `; & |` and newline.
+- **The other parsers fail closed too (#20).** `flatten_substitutions`,
+  `collect_assignments` and `unwrap_eval_and_bashc` did not follow
+  escapes or nesting, so an escaped quote in an `eval` / `bash -c`
+  argument, a quote glued to the next word (`'a b'c`), a nested `$( )`
+  or an escaped quote in an assignment could hide a command or a later
+  `NAME=value` from pattern-matching hooks. Instead of parsing more of
+  bash, each parser now detects input it cannot determine and prints an
+  over-approximation (more text, never less) for it; see
+  `docs/hook-contract.md` §3 "Fail-closed parsing". `flatten_substitutions`
+  stays at one level of nesting on purpose.
 
 ### Added
+
+- `CORE_HARNESS_STRICT_PARSE=1`: the four parsers return 2 with a deny
+  line on stderr for undetermined input (default: status 0, as before).
+- `docs/hook-contract.md` §3 states the parsers' role (second layer
+  behind `permissions.deny` and the sandbox) and why enforcement hooks
+  should not use the hook `if` filter.
 
 - bash `read_pretooluse_input`: reads stdin once at top level, validates
   it, and caches it for the accessors. Hooks should call it before any
@@ -94,6 +110,18 @@ Visible to existing hook authors:
     must now look inside the segment text.
   Segment output format (one segment per line, separators dropped, text
   otherwise verbatim) is unchanged.
+- For undetermined input (#20) the parsers print **more**:
+  `flatten_substitutions` appends a copy of the line with `$ ( ) ` ; & |`
+  as spaces and backslashes removed; `collect_assignments` gives the
+  variable the rest of the line and also prints every later `NAME=` on
+  it; `unwrap_eval_and_bashc` prints the rest of the line, quotes and
+  backslashes removed, one line per separator-delimited piece (before,
+  an unclosed quote printed nothing), and also prints third-level bodies.
+- `collect_assignments` no longer lets a `$( ... )` value run to the end
+  of the line (`$(` was counted as two levels), so `A=$(pwd) B=2` now
+  yields both assignments.
+- `unwrap_eval_and_bashc` reads arguments left to right: a `"..."`
+  argument later on a line no longer hides an earlier `'...'` one.
 
 Migration: add `read_pretooluse_input` at the top level of the hook,
 before the first accessor, and write `cmd=$(read_pretooluse_command) ||
@@ -101,7 +129,10 @@ exit 2` (template in `docs/hook-contract.md` §3).
 
 claude-org-ja's `.hooks/*.sh` parse stdin themselves and do not call
 `read_pretooluse_*`; they use `split_segments` and the other parsers, so
-they are affected only by the `split_segments` change.
+they are affected by the `split_segments` change and by the extra
+output for undetermined input (#20); their deny verdicts do not change
+in their own test suites, but `tests/test-unwrap-eval-bashc.sh` asserts
+that `eval "unterminated` prints nothing and must be updated.
 
 ## [0.3.2] - 2026-05-02
 

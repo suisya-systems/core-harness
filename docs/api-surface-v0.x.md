@@ -88,6 +88,10 @@ Sourced via the path returned by `lib_path()`. Public functions:
   with a locale-specific contract (for example a localized prefix such
   as `"ブロック: "`) export this at their org boundary so Layer 1 stays
   unaware of consumer locale.
+- `CORE_HARNESS_STRICT_PARSE` — set to `1` to make the bash parsers
+  (`split_segments`, `flatten_substitutions`, `collect_assignments`,
+  `unwrap_eval_and_bashc`) return 2 with a deny line on undetermined
+  input instead of 0. See `hook-contract.md` §3 "Fail-closed parsing".
 
 ### `core_harness.audit`
 

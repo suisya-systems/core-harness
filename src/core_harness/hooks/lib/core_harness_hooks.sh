@@ -23,6 +23,11 @@
 #   expand_known_vars VAR=val ...          — substitute $VAR / ${VAR}
 #   unwrap_eval_and_bashc                  — pull eval / bash -c / sh -c arguments
 #
+# The parsers fail closed: input they cannot determine makes them print
+# extra, over-approximated output (never less), and, with
+# CORE_HARNESS_STRICT_PARSE=1, also return 2. See "Fail-closed parsing"
+# below and docs/hook-contract.md section 3 ("Fail-closed parsing").
+#
 # The block-message prefix defaults to the neutral English "Blocked: ";
 # consumers that need a different locale-specific prefix (e.g. claude-
 # org-ja's "ブロック: ") export CORE_HARNESS_BLOCK_PREFIX before sourcing
@@ -154,6 +159,27 @@ read_pretooluse_tool_name() {
 # this library.
 # ---------------------------------------------------------------------------
 
+# Fail-closed parsing. These helpers do not track every bash rule; they
+# do not try to. When a helper meets input it cannot determine (an
+# unbalanced quote, an escape it does not follow, nesting deeper than it
+# reads), it does not guess:
+#   - it prints its normal output plus an over-approximation (extra
+#     segments / text with quotes and escapes stripped), so a caller that
+#     pattern-matches the output sees everything bash could run; and
+#   - it exits 3 internally, which __core_harness_parse_status maps to 0
+#     (default, so existing callers keep their exit statuses) or, when
+#     CORE_HARNESS_STRICT_PARSE=1, to a deny line on stderr and status 2,
+#     for callers that want "undetermined" to mean "deny".
+
+# Internal: __core_harness_parse_status <awk status> <helper name>
+__core_harness_parse_status() {
+  [[ "$1" -eq 3 ]] || return "$1"
+  [[ "${CORE_HARNESS_STRICT_PARSE:-}" == 1 ]] || return 0
+  printf '%s%s\n' "${CORE_HARNESS_BLOCK_PREFIX}" \
+    "$2 could not determine how bash parses the command." >&2
+  return 2
+}
+
 # split_segments
 #   Read a Bash command string from stdin; print one segment per line,
 #   splitting at the top-level command boundaries bash itself uses:
@@ -203,8 +229,10 @@ read_pretooluse_tool_name() {
 #   splitting at every ; & | and newline character, ignoring quotes, so
 #   that no boundary can hide. The fallback prints the splitting of the
 #   raw text and, when it has line continuations, also the splitting of
-#   the text with them joined (extra segments only).
+#   the text with them joined (extra segments only). A fallback counts as
+#   undetermined input (see "Fail-closed parsing").
 split_segments() {
+  local rc=0
   awk -v ors="${__CORE_HARNESS_SPLIT_ORS:-}" '
     function emit() { segs[++ns] = seg; seg = "" }
     # Split s at every ; & | and newline character, ignoring quotes.
@@ -510,8 +538,10 @@ split_segments() {
         if (joined != orig) fallback(joined)
       }
       for (k = 1; k <= ns; k++) printf "%s%s", segs[k], ors
+      exit ((sp > 0 || lost) ? 3 : 0)
     }
-  '
+  ' || rc=$?
+  __core_harness_parse_status "$rc" split_segments
 }
 
 # flatten_substitutions
@@ -520,12 +550,29 @@ split_segments() {
 #   see flag tokens hidden behind command substitution. Quote chars in
 #   the appended portion are squashed to spaces.
 #
-#   Limitations: 1-level nesting only; $((arith)) ignored.
+#   Frozen at one level on purpose (deeper nesting is undetermined, not
+#   parsed): only innermost $( ) bodies (no parenthesis inside) and `...`
+#   bodies are read; $(( )) arithmetic is skipped. Quotes are not
+#   tracked. A line is undetermined when it contains a backslash (an
+#   escape this reader does not follow, inside or outside a body) or when
+#   a $( or ` is left over once those bodies are taken (nested or
+#   unclosed substitution, a parenthesis inside a body, a $( inside
+#   quotes). For such a line the output also gets a copy of the line with
+#   $ ( ) ` ; & | turned into spaces and backslashes removed, so every word of
+#   every substitution, at any depth, is visible. Input is read line by
+#   line, so a substitution that spans lines (the usual here-document
+#   commit message) is undetermined too.
 flatten_substitutions() {
+  local rc=0
   awk '
     {
       out = $0
       s = $0
+      gsub(/\$\(\([^()]*\)\)/, "", s)
+      left = s
+      gsub(/\$\([^()]*\)/, "", left)
+      gsub(/`[^`]*`/, "", left)
+      undet = (index($0, "\\") > 0 || index(left, "$(") > 0 || index(left, "`") > 0)
       while (match(s, /\$\([^()]*\)/)) {
         body = substr(s, RSTART+2, RLENGTH-3)
         out = out " " body
@@ -537,10 +584,19 @@ flatten_substitutions() {
         out = out " " body
         s = substr(s, RSTART+RLENGTH)
       }
+      if (undet) {
+        d = $0
+        gsub(/[$()`;&|]/, " ", d)
+        gsub(/\\/, "", d)
+        out = out " " d
+        lost = 1
+      }
       gsub(/[\047\042]/, " ", out)
       print out
     }
-  '
+    END { exit (lost ? 3 : 0) }
+  ' || rc=$?
+  __core_harness_parse_status "$rc" flatten_substitutions
 }
 
 # collect_assignments
@@ -550,7 +606,16 @@ flatten_substitutions() {
 #   Handles: leading VAR=val, `export VAR=val`, multi-assign chains
 #   `A=1 B=2 cmd`, and command-substitution values `VAR=$(cmd)` (body
 #   appended for downstream regex).
+#
+#   A value is undetermined when it contains a backslash or $'...' (escapes
+#   are not followed), a " inside "$( ... )" (quotes nested in a
+#   substitution are not tracked), or a quote, backtick or $( still open at
+#   the end of the line (values are read line by line). Then the variable
+#   gets the whole rest of the line, backslashes removed, as its value, and
+#   every later NAME= on the line is printed the same way, since where the
+#   value ends is unknown.
 collect_assignments() {
+  local rc=0
   awk '
     function emit_assign(var, val,    flat, body, s) {
       flat = val
@@ -580,7 +645,7 @@ collect_assignments() {
         var = substr(seg, 1, RLENGTH - 1)
         rest = substr(seg, RLENGTH + 1)
         val = ""; n = length(rest)
-        in_dq = 0; in_sq = 0; in_bt = 0; paren_depth = 0; i = 1
+        in_dq = 0; in_sq = 0; in_bt = 0; paren_depth = 0; i = 1; undet = 0
         while (i <= n) {
           c = substr(rest, i, 1)
           next_c = (i < n) ? substr(rest, i+1, 1) : ""
@@ -588,9 +653,13 @@ collect_assignments() {
             if (c == "\x27") { in_sq = 0; i++; continue }
             val = val c; i++; continue
           }
+          if (c == "\\" || (c == "$" && next_c == "\x27")) undet = 1
           if (in_dq) {
-            if (c == "\"") { in_dq = 0; i++; continue }
-            if (c == "$" && next_c == "(") { paren_depth++; val = val c; i++; continue }
+            if (c == "\"") {
+              if (paren_depth > 0) undet = 1
+              in_dq = 0; i++; continue
+            }
+            if (c == "$" && next_c == "(") { paren_depth++; val = val "$("; i += 2; continue }
             if (paren_depth > 0) {
               if (c == "(") paren_depth++
               if (c == ")") paren_depth--
@@ -604,7 +673,7 @@ collect_assignments() {
           if (c == "\"") { in_dq = 1; i++; continue }
           if (c == "\x27") { in_sq = 1; i++; continue }
           if (c == "`") { in_bt = 1; val = val c; i++; continue }
-          if (c == "$" && next_c == "(") { paren_depth++; val = val c; i++; continue }
+          if (c == "$" && next_c == "(") { paren_depth++; val = val "$("; i += 2; continue }
           if (paren_depth > 0) {
             if (c == "(") paren_depth++
             if (c == ")") paren_depth--
@@ -613,27 +682,58 @@ collect_assignments() {
           if (c == " " || c == "\t") break
           val = val c; i++
         }
+        if (in_dq || in_sq || in_bt || paren_depth > 0) undet = 1
+        if (undet) {
+          lost = 1
+          r = rest
+          gsub(/\\/, "", r)
+          emit_assign(var, r)
+          while (match(r, /[ \t;&|(`\047\042][A-Za-z_][A-Za-z0-9_]*=/)) {
+            r = substr(r, RSTART + 1)
+            match(r, /^[A-Za-z_][A-Za-z0-9_]*=/)
+            emit_assign(substr(r, 1, RLENGTH - 1), substr(r, RLENGTH + 1))
+            r = substr(r, RLENGTH + 1)
+          }
+          break
+        }
         if (length(val) > 0) emit_assign(var, val)
         seg = substr(rest, i + 1)
         sub(/^[ \t]+/, "", seg)
       }
     }
-  '
+    END { exit (lost ? 3 : 0) }
+  ' || rc=$?
+  __core_harness_parse_status "$rc" collect_assignments
 }
 
 # unwrap_eval_and_bashc
 #   Read segments from stdin; print eval / bash -c / sh -c argument
-#   bodies as additional segments (one per line). Up to 2 levels deep.
+#   bodies as additional segments (one per line). Up to 2 levels deep;
+#   a third level is printed too, but counts as undetermined.
+#
+#   An argument is undetermined when its quote is not closed on the line,
+#   it contains a backslash (inside "..." the inner shell may still read
+#   it as an escape, and \" ends the regex early), it is $'...' / $"...",
+#   or the word goes on after the closing quote ('git pu'sh). Then the
+#   rest of the line is printed with quotes and backslashes removed and a
+#   line break at every ; & | ( ) and backtick, so that each command bash
+#   could run starts a line of its own. This reveals text only: escapes
+#   such as $'\x41' are not decoded, so callers that must not miss those
+#   use strict mode.
 unwrap_eval_and_bashc() {
-  local current next iter
+  local current next iter rc=0 prc
   current=$(cat)
   [[ -z "$current" ]] && return 0
-  for iter in 1 2; do
-    next=$(printf '%s\n' "$current" | __core_harness_unwrap_pass)
+  for iter in 1 2 3; do
+    prc=0
+    next=$(printf '%s\n' "$current" | __core_harness_unwrap_pass) || prc=$?
+    case "$prc" in 0) ;; 3) rc=3 ;; *) return "$prc" ;; esac
     [[ -z "$next" ]] && break
+    [[ $iter -eq 3 ]] && rc=3
     printf '%s\n' "$next"
     current="$next"
   done
+  __core_harness_parse_status "$rc" unwrap_eval_and_bashc
 }
 
 __core_harness_unwrap_pass() {
@@ -641,37 +741,38 @@ __core_harness_unwrap_pass() {
     function emit_body(body) {
       if (length(body) > 0) print body
     }
+    # The argument cannot be read: print the rest of the line, split at
+    # every separator character, with quotes and backslashes removed.
+    function give_up(arg) {
+      gsub(/[\\\042\047]/, "", arg)
+      gsub(/[;&|()`]/, "\n", arg)
+      emit_body(arg)
+      lost = 1
+    }
     {
       line = $0
-      while (1) {
-        if (match(line, /(^|[^A-Za-z0-9_-])(eval|bash[ \t]+-c|sh[ \t]+-c)[ \t]+"[^"]*"/)) {
-          tok = substr(line, RSTART, RLENGTH)
-          q = index(tok, "\"")
-          emit_body(substr(tok, q+1, length(tok)-q-1))
-          line = substr(line, RSTART+RLENGTH)
+      while (match(line, /(^|[^A-Za-z0-9_-])(eval|bash[ \t]+-c|sh[ \t]+-c)[ \t]+/)) {
+        head = substr(line, RSTART, RLENGTH)
+        arg = substr(line, RSTART + RLENGTH)
+        line = arg
+        q = substr(arg, 1, 1)
+        if (q == "\"" || q == "\047") {
+          if (!match(arg, "^" q "[^" q "]*" q)) { give_up(arg); break }
+          body = substr(arg, 2, RLENGTH - 2)
+          line = substr(arg, RLENGTH + 1)
+          if (index(body, "\\") > 0 || line !~ /^([ \t;&|)<>]|$)/) { give_up(arg); break }
+          emit_body(body)
           continue
         }
-        if (match(line, /(^|[^A-Za-z0-9_-])(eval|bash[ \t]+-c|sh[ \t]+-c)[ \t]+\047[^\047]*\047/)) {
-          tok = substr(line, RSTART, RLENGTH)
-          q = index(tok, "\047")
-          emit_body(substr(tok, q+1, length(tok)-q-1))
-          line = substr(line, RSTART+RLENGTH)
-          continue
-        }
-        if (match(line, /(^|[^A-Za-z0-9_-])eval[ \t]+[^ \t"\047;&|`][^ \t;&|`]*/)) {
-          tok = substr(line, RSTART, RLENGTH)
-          eidx = index(tok, "eval")
-          if (eidx > 0) {
-            after = substr(tok, eidx + 4)
-            sub(/^[ \t]+/, "", after)
-            emit_body(after)
-          }
-          line = substr(line, RSTART+RLENGTH)
-          continue
-        }
-        break
+        if (q == "$" && (substr(arg, 2, 1) == "\047" || substr(arg, 2, 1) == "\"")) { give_up(arg); break }
+        if (!match(arg, /^[^ \t;&|`][^ \t;&|`]*/)) continue
+        word = substr(arg, 1, RLENGTH)
+        if (word ~ /[\\\042\047]/) { give_up(arg); break }
+        if (head ~ /eval/) emit_body(word)
+        line = substr(arg, RLENGTH + 1)
       }
     }
+    END { exit (lost ? 3 : 0) }
   '
 }
 
